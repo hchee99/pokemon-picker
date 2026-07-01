@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>포켓몬 싱글 3선발 도우미</title>
+<style>
+  :root{
+    --bg:#f6f6f4; --surface:#ffffff; --surface2:#f1efe8; --border:#e2e0d8;
+    --text:#20201e; --muted:#6b6a63; --accent:#185fa5; --accent-bg:#e6f1fb;
+    --danger:#a32d2d; --danger-bg:#fcebeb; --success:#0f6e56; --success-bg:#e1f5ee;
+    --radius:8px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1a1a18; --surface:#26251f; --surface2:#2f2e27; --border:#3a3931;
+      --text:#ecebe3; --muted:#a2a097; --accent:#85b7eb; --accent-bg:#0c447c;
+      --danger:#f09595; --danger-bg:#501313; --success:#5dcaa5; --success-bg:#04342c; }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,"Malgun Gothic",sans-serif; line-height:1.6; }
+  .wrap{ max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  h1{ font-size:22px; font-weight:600; margin:0 0 4px; }
+  .sub{ color:var(--muted); font-size:13px; margin:0 0 20px; }
+  details{ border:0.5px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:12px; background:var(--surface); }
+  details[data-accent]{ border-color:var(--accent); }
+  summary{ cursor:pointer; font-size:14px; font-weight:500; }
+  summary[data-accent]{ color:var(--accent); }
+  p.hint{ font-size:12px; color:var(--muted); margin:8px 0; }
+  textarea, input, select, button{ font-family:inherit; font-size:13px; color:var(--text);
+    background:var(--surface); border:0.5px solid var(--border); border-radius:var(--radius); }
+  textarea{ width:100%; padding:8px; resize:vertical; }
+  input, select{ height:34px; padding:0 8px; }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-bg); }
+  button{ height:34px; padding:0 12px; cursor:pointer; transition:background .12s; }
+  button:hover{ background:var(--surface2); }
+  button:active{ transform:scale(.98); }
+  button.primary{ width:100%; height:40px; font-size:15px; font-weight:500; }
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .teams{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0; }
+  @media (max-width:560px){ .teams{ grid-template-columns:1fr; } }
+  .teamhead{ font-size:13px; font-weight:500; margin-bottom:8px; }
+  .slot{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .slot span{ font-size:11px; color:var(--muted); width:14px; }
+  .slot input{ flex:1; }
+  .msg{ font-size:12px; }
+  .card{ border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--surface); }
+  .card.top{ border:2px solid var(--accent); }
+  .badge{ display:inline-flex; padding:2px 7px; border-radius:999px; color:#fff; font-size:11px; font-weight:500; }
+  .pill{ font-size:12px; padding:3px 9px; border-radius:var(--radius); }
+  .foot{ color:var(--muted); font-size:12px; margin-top:24px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>포켓몬 싱글 3선발 도우미</h1>
+  <p class="sub">6마리 지참 → 3마리 선발(팀 프리뷰). 내 팀과 상대 팀을 넣으면 커버리지·선공·약점 노출을 계산해 최적 3마리를 추천합니다.</p>
+
+  <details data-accent>
+    <summary data-accent>① 데이터 내보내기 / 가져오기</summary>
+    <p class="hint">채팅 위젯에서 쓰던 317마리를 이 사이트로 옮기려면: 위젯에서 <b>내보내기</b>한 JSON을 아래에 붙여넣고 “가져오기”. 반대로 이 사이트의 데이터도 내보낼 수 있어요.</p>
+    <div class="row" style="margin-bottom:8px;">
+      <button id="exportBtn">현재 데이터 내보내기(복사)</button>
+      <button id="downloadBtn">JSON 파일로 저장</button>
+      <input type="file" id="fileIn" accept="application/json" style="font-size:12px;">
+    </div>
+    <textarea id="ioBox" placeholder="여기에 JSON을 붙여넣고 '가져오기'를 누르세요" style="height:70px;"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="importBtn">가져오기</button>
+      <span id="ioMsg" class="msg"></span>
+    </div>
+  </details>
+
+  <details>
+    <summary>② op.gg에서 붙여넣어 추가 <span id="dexcount" style="color:var(--muted); font-weight:400;"></span></summary>
+    <p class="hint">op.gg 도감 표를 드래그 복사(텍스트·HTML 모두 인식) → 붙여넣기 → 추가. 중복 자동 제거, 지역폼은 타입 꼬리표로 구분.</p>
+    <textarea id="paste" placeholder="op.gg 표 내용 붙여넣기" style="height:60px;"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="addbtn">붙여넣기 추가</button>
+      <button id="resetbtn" style="color:var(--danger);">전체 초기화</button>
+      <span id="addmsg" class="msg" style="color:var(--success);"></span>
+    </div>
+  </details>
+
+  <details>
+    <summary>③ op.gg에 없는 포켓몬 직접 추가</summary>
+    <p class="hint">아직 op.gg에 안 올라온 포켓몬을 이름·타입으로 직접 넣으세요. 스피드는 선택(넣으면 선공 계산에 반영).</p>
+    <div class="row">
+      <input id="mName" placeholder="이름" style="flex:2; min-width:110px;">
+      <select id="mT1" style="flex:1; min-width:90px;"></select>
+      <select id="mT2" style="flex:1; min-width:90px;"></select>
+      <input id="mSpe" type="number" placeholder="스피드" style="flex:1; min-width:80px;">
+      <button id="manbtn">추가</button>
+    </div>
+    <span id="manmsg" class="msg"></span>
+  </details>
+
+  <div class="teams">
+    <div><div class="teamhead" style="color:var(--accent);">내 팀 (6)</div><div id="mine"></div></div>
+    <div><div class="teamhead" style="color:var(--danger);">상대 팀 (6)</div><div id="foe"></div></div>
+  </div>
+  <datalist id="dexlist"></datalist>
+
+  <button id="go" class="primary">최적 3마리 조합 찾기</button>
+  <div id="out" style="margin-top:16px;"></div>
+
+  <p class="foot">타입 상성 기반 계산 · 실제 배틀은 기술·도구·특성·스피드 실능에 따라 달라질 수 있어요.</p>
+</div>
+
+<script>
+const TMAP={노말:"Normal",불꽃:"Fire",물:"Water",전기:"Electric",풀:"Grass",얼음:"Ice",격투:"Fighting",독:"Poison",땅:"Ground",비행:"Flying",에스퍼:"Psychic",벌레:"Bug",바위:"Rock",고스트:"Ghost",드래곤:"Dragon",악:"Dark",강철:"Steel",페어리:"Fairy"};
+const KO={Normal:"노말",Fire:"불꽃",Water:"물",Electric:"전기",Grass:"풀",Ice:"얼음",Fighting:"격투",Poison:"독",Ground:"땅",Flying:"비행",Psychic:"에스퍼",Bug:"벌레",Rock:"바위",Ghost:"고스트",Dragon:"드래곤",Dark:"악",Steel:"강철",Fairy:"페어리"};
+const COL={Normal:"#A8A77A",Fire:"#EE8130",Water:"#6390F0",Electric:"#F7D02C",Grass:"#7AC74C",Ice:"#96D9D6",Fighting:"#C22E28",Poison:"#A33EA1",Ground:"#E2BF65",Flying:"#A98FF3",Psychic:"#F95587",Bug:"#A6B91A",Rock:"#B6A136",Ghost:"#735797",Dragon:"#6F35FC",Dark:"#705746",Steel:"#B7B7CE",Fairy:"#D685AD"};
+const SUPER={Normal:[],Fire:["Grass","Ice","Bug","Steel"],Water:["Fire","Ground","Rock"],Electric:["Water","Flying"],Grass:["Water","Ground","Rock"],Ice:["Grass","Ground","Flying","Dragon"],Fighting:["Normal","Ice","Rock","Dark","Steel"],Poison:["Grass","Fairy"],Ground:["Fire","Electric","Poison","Rock","Steel"],Flying:["Grass","Fighting","Bug"],Psychic:["Fighting","Poison"],Bug:["Grass","Psychic","Dark"],Rock:["Fire","Ice","Flying","Bug"],Ghost:["Psychic","Ghost"],Dragon:["Dragon"],Dark:["Psychic","Ghost"],Steel:["Ice","Rock","Fairy"],Fairy:["Fighting","Dragon","Dark"]};
+const NOTVERY={Normal:["Rock","Steel"],Fire:["Fire","Water","Rock","Dragon"],Water:["Water","Grass","Dragon"],Electric:["Electric","Grass","Dragon"],Grass:["Fire","Grass","Poison","Flying","Bug","Dragon","Steel"],Ice:["Fire","Water","Ice","Steel"],Fighting:["Poison","Flying","Psychic","Bug","Fairy"],Poison:["Poison","Ground","Rock","Ghost"],Ground:["Grass","Bug"],Flying:["Electric","Rock","Steel"],Psychic:["Psychic","Steel"],Bug:["Fire","Fighting","Poison","Flying","Ghost","Steel","Fairy"],Rock:["Fighting","Ground","Steel"],Ghost:["Dark"],Dragon:["Steel"],Dark:["Fighting","Dark","Fairy"],Steel:["Fire","Water","Electric","Steel"],Fairy:["Fire","Poison","Steel"]};
+const NOEFFECT={Normal:["Ghost"],Electric:["Ground"],Fighting:["Ghost"],Poison:["Steel"],Ground:["Flying"],Psychic:["Dark"],Ghost:["Normal"],Dragon:["Fairy"],Fire:[],Water:[],Grass:[],Ice:[],Flying:[],Bug:[],Rock:[],Dark:[],Steel:[],Fairy:[]};
+function mult(a,d){ if(NOEFFECT[a].includes(d))return 0; if(SUPER[a].includes(d))return 2; if(NOTVERY[a].includes(d))return 0.5; return 1; }
+function eff(a,defT){ return defT.reduce((p,d)=>p*mult(a,d),1); }
+function bestAtk(atkT,defT){ return Math.max(...atkT.map(a=>eff(a,defT))); }
+
+const KEY="pkmn_dex_v1";
+let DEX={};
+function addMon(name,types,spe){
+  if(!name||!types.length)return;
+  types=[...new Set(types)]; const sig=types.join();
+  if(DEX[name] && DEX[name].types.join()===sig){ if(spe)DEX[name].spe=spe; return; }
+  let key=name;
+  if(DEX[name] && DEX[name].types.join()!==sig){ key=name+" ("+types.map(t=>KO[t]).join("/")+")"; }
+  DEX[key]={name:key,base:name,types,spe:spe||null};
+}
+const SEED=[["이상해꽃",["Grass","Poison"],80],["리자몽",["Fire","Flying"],100],["거북왕",["Water"],78],["피카츄",["Electric"],90]];
+function seed(){ SEED.forEach(m=>addMon(m[0],m[1],m[2])); }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(DEX)); }catch(e){} }
+function load(){ try{ const s=localStorage.getItem(KEY); if(s){ DEX=JSON.parse(s); return true; } }catch(e){} return false; }
+if(!load()){ seed(); save(); }
+
+function refreshDex(){ const names=Object.keys(DEX); document.getElementById("dexlist").innerHTML=names.map(n=>`<option value="${n}"></option>`).join(""); document.getElementById("dexcount").textContent=`· ${names.length}마리 저장됨`; }
+
+function parseHTML(html){
+  let n=0;
+  try{ const doc=new DOMParser().parseFromString(html,"text/html"); const anchors=doc.querySelectorAll('a[href*="/pokedex/"]'); if(!anchors.length) return 0;
+    anchors.forEach(a=>{ const nameEl=a.querySelector('.truncate'); const name=nameEl?nameEl.textContent.trim():""; const types=[...a.querySelectorAll('span[style*="background-color"]')].map(s=>s.textContent.trim()).map(t=>TMAP[t]).filter(Boolean); let spe=null; const host=a.closest('[class*="min-w-"]'); if(host){ const cells=[...host.querySelectorAll('div')].filter(d=>d.className&&d.className.includes('w-[46px]')); if(cells.length>=6) spe=parseInt(cells[5].textContent.trim())||null; } if(name&&types.length){ addMon(name,types,spe); n++; } });
+  }catch(e){}
+  return n;
+}
+function parseText(txt){
+  const lines=txt.split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length); const isInt=s=>/^\d+$/.test(s); let n=0;
+  for(let i=0;i<lines.length;i++){ if(/^#\d+/.test(lines[i])){ let j=i-1; const types=[]; while(j>=0 && TMAP[lines[j]]){ types.unshift(TMAP[lines[j]]); j--; } const name=j>=0?lines[j]:""; let k=i+1; const stats=[]; while(k<lines.length){ if(isInt(lines[k])){ while(k<lines.length && isInt(lines[k])){ stats.push(parseInt(lines[k])); k++; } break; } k++; } const spe=stats.length>=6?stats[5]:null; if(name&&types.length){ addMon(name,types,spe); n++; } } }
+  return n;
+}
+document.getElementById("addbtn").addEventListener("click",()=>{ const raw=document.getElementById("paste").value; const before=Object.keys(DEX).length; let n=parseHTML(raw); if(n===0) n=parseText(raw); save(); refreshDex(); document.getElementById("paste").value=""; document.getElementById("addmsg").textContent=n?`인식 ${n} · 신규 ${Object.keys(DEX).length-before} · 총 ${Object.keys(DEX).length}`:"인식된 포켓몬이 없어요"; });
+document.getElementById("resetbtn").addEventListener("click",()=>{ if(!confirm("모든 데이터를 지우고 기본값으로 되돌릴까요?"))return; DEX={}; seed(); save(); refreshDex(); document.getElementById("addmsg").textContent="기본값으로 초기화됨"; });
+
+const TOPTS='<option value="">타입</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
+document.getElementById("mT1").innerHTML=TOPTS;
+document.getElementById("mT2").innerHTML='<option value="">타입2(선택)</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
+document.getElementById("manbtn").addEventListener("click",()=>{ const name=document.getElementById("mName").value.trim(); const t1=document.getElementById("mT1").value; const t2=document.getElementById("mT2").value; const spe=parseInt(document.getElementById("mSpe").value)||null; const msg=document.getElementById("manmsg"); if(!name){ msg.style.color="var(--danger)"; msg.textContent="이름을 입력하세요"; return; } if(!t1){ msg.style.color="var(--danger)"; msg.textContent="타입1을 고르세요"; return; } addMon(name,[t1,t2].filter(Boolean),spe); save(); refreshDex(); msg.style.color="var(--success)"; msg.textContent=`${name} 추가됨 · 총 ${Object.keys(DEX).length}`; document.getElementById("mName").value=""; document.getElementById("mT1").value=""; document.getElementById("mT2").value=""; document.getElementById("mSpe").value=""; });
+
+document.getElementById("exportBtn").addEventListener("click",()=>{ const json=JSON.stringify(DEX); document.getElementById("ioBox").value=json; navigator.clipboard&&navigator.clipboard.writeText(json).catch(()=>{}); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${Object.keys(DEX).length}마리 복사됨(아래 칸에도 표시)`; });
+document.getElementById("downloadBtn").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify(DEX)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pokedex.json"; a.click(); });
+function doImport(json){ try{ const obj=JSON.parse(json); if(typeof obj!=="object")throw 0; let n=0; Object.values(obj).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null}; n++; } }); save(); refreshDex(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
+document.getElementById("importBtn").addEventListener("click",()=>doImport(document.getElementById("ioBox").value));
+document.getElementById("fileIn").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>doImport(r.result); r.readAsText(f); });
+
+function slots(container,presets){ for(let i=0;i<6;i++) container.insertAdjacentHTML("beforeend",`<div class="slot"><span>${i+1}</span><input list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"></div>`); }
+slots(document.getElementById("mine"),["리자몽","거북왕","피카츄","","",""]);
+slots(document.getElementById("foe"),["이상해꽃","","","","",""]);
+
+function badge(t){ return `<span class="badge" style="background:${COL[t]}">${KO[t]}</span>`; }
+function readTeam(id){ return [...document.querySelectorAll(`#${id} input`)].map(i=>DEX[i.value.trim()]).filter(Boolean); }
+function monLabel(m){ return `<span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap;"><span style="font-size:12px; font-weight:500;">${m.name}</span>${m.types.map(badge).join("")}${m.spe?`<span style="font-size:10px; color:var(--muted);">S${m.spe}</span>`:''}</span>`; }
+function combos(a){ const r=[]; for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)for(let k=j+1;k<a.length;k++)r.push([a[i],a[j],a[k]]); return r; }
+function evalCombo(sq,foes){
+  let cov=[],miss=[],quad=0,fast=0,risk=0,rd=[];
+  foes.forEach(f=>{ let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(m.types,f.types); if(e>best)best=e; if(e>=2&&m.spe&&f.spe&&m.spe>f.spe)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
+  sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(f.types,m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
+  return {sq,cov,miss,quad,fast,risk,rd,score:cov.length*100+fast*10+quad*4-risk*6};
+}
+function run(){
+  const mine=readTeam("mine"),foes=readTeam("foe"),out=document.getElementById("out");
+  if(mine.length<3){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">내 팀을 3마리 이상 골라 주세요 (이름이 목록에 있어야 인식돼요).</div>'; return; }
+  if(!foes.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">상대 팀을 1마리 이상 골라 주세요.</div>'; return; }
+  const ranked=combos(mine).map(sq=>evalCombo(sq,foes)).sort((a,b)=>b.score-a.score).slice(0,4);
+  let html=`<div style="font-size:13px; color:var(--muted); margin-bottom:10px;">상대 <b>${foes.length}마리</b> 기준 상위 추천</div>`;
+  ranked.forEach((r,i)=>{ const top=i===0;
+    html+=`<div class="card ${top?'top':''}">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">${top?'<span class="pill" style="background:var(--accent-bg); color:var(--accent);">추천</span>':`<span style="font-size:12px; color:var(--muted);">${i+1}위</span>`}${r.sq.map(monLabel).join('<span style="color:var(--muted);">·</span>')}</div>
+      <div class="row" style="margin-bottom:8px;">
+        <span class="pill" style="background:var(--success-bg); color:var(--success);">커버 ${r.cov.length}/${foes.length}${r.quad?` · 4배 ${r.quad}`:''}</span>
+        <span class="pill" style="background:var(--accent-bg); color:var(--accent);">선공 커버 ${r.fast}</span>
+        <span class="pill" style="background:${r.risk<=2?'var(--surface2)':'var(--danger-bg)'}; color:${r.risk<=2?'var(--muted)':'var(--danger)'};">위험 ${r.risk}</span>
+      </div>
+      ${r.miss.length?`<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">놓치는 상대: ${r.miss.map(monLabel).join(" ")}</div>`:'<div style="font-size:12px; color:var(--success); margin-bottom:4px;">상대 전원 2배↑ 커버</div>'}
+      ${r.rd.length?`<div style="font-size:12px; color:var(--danger);">주의: ${r.rd.map(d=>d.m.name+`(${d.h})`).join(" · ")} 약점 노출</div>`:''}
+    </div>`;
+  });
+  out.innerHTML=html;
+}
+document.getElementById("go").addEventListener("click",run);
+refreshDex(); run();
+</script>
+</body>
+</html>
