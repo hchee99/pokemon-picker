@@ -107,7 +107,7 @@
 
   <div class="teams">
     <div><div class="teamhead" style="color:var(--accent);">내 팀 (6) · ⚙로 도구·기술·스피드버프 설정</div><div id="mine"></div></div>
-    <div><div class="teamhead" style="color:var(--danger);">상대 팀 (6)</div><div id="foe"></div></div>
+    <div><div class="teamhead" style="color:var(--danger);">상대 팀 (6) · ⚙로 도구·기술·스피드버프 설정</div><div id="foe"></div></div>
   </div>
   <datalist id="dexlist"></datalist>
   <datalist id="itemlist"></datalist>
@@ -138,8 +138,8 @@ function eff(a,defT){ return defT.reduce((p,d)=>p*mult(a,d),1); }
 function bestAtk(atkT,defT){ return Math.max(...atkT.map(a=>eff(a,defT))); }
 function fmtMult(v){ return v===0.25?'¼':v===0.5?'½':(''+v); }
 
-const KEY="pkmn_dex_v1", BKEY="pkmn_builds_v1";
-let DEX={}, BUILDS={};
+const KEY="pkmn_dex_v1", BKEY="pkmn_builds_v1", FBKEY="pkmn_foebuilds_v1";
+let DEX={}, BUILDS={}, FOEBUILDS={};
 function addMon(name,types,spe){
   if(!name||!types.length)return;
   types=[...new Set(types)]; const sig=types.join();
@@ -154,9 +154,10 @@ function save(){ try{ localStorage.setItem(KEY,JSON.stringify(DEX)); }catch(e){}
 function load(){ try{ const s=localStorage.getItem(KEY); if(s){ DEX=JSON.parse(s); return true; } }catch(e){} return false; }
 if(!load()){ seed(); save(); }
 try{ const b=localStorage.getItem(BKEY); if(b) BUILDS=JSON.parse(b); }catch(e){}
-function saveBuilds(){ try{ localStorage.setItem(BKEY,JSON.stringify(BUILDS)); }catch(e){} }
-function getBuild(name){ return BUILDS[name]||{item:"",moves:["","","",""],spd:1}; }
-function setBuild(name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m) && (!b.spd||b.spd<=1)){ delete BUILDS[name]; } else { BUILDS[name]={item:b.item,moves:b.moves,spd:b.spd||1}; } saveBuilds(); }
+try{ const b=localStorage.getItem(FBKEY); if(b) FOEBUILDS=JSON.parse(b); }catch(e){}
+function saveB(store){ try{ localStorage.setItem(store===FOEBUILDS?FBKEY:BKEY,JSON.stringify(store)); }catch(e){} }
+function getB(store,name){ return store[name]||{item:"",moves:["","","",""],spd:1}; }
+function setB(store,name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m) && (!b.spd||b.spd<=1)){ delete store[name]; } else { store[name]={item:b.item,moves:b.moves,spd:b.spd||1}; } saveB(store); }
 function scarf(item){ return item && item.indexOf("스카프")>=0; }
 function effSpe(m,build){ if(!m.spe)return null; let mult=1; if(build){ if(scarf(build.item)) mult*=1.5; if(build.spd&&build.spd>1) mult*=build.spd; } return Math.round(m.spe*mult); }
 function atkTypes(m){ const mv=(m.build&&m.build.moves||[]).filter(Boolean); return mv.length?[...new Set(mv)]:m.types; }
@@ -189,15 +190,14 @@ document.getElementById("mT1").innerHTML=TOPTS;
 document.getElementById("mT2").innerHTML='<option value="">타입2(선택)</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
 document.getElementById("manbtn").addEventListener("click",()=>{ const name=document.getElementById("mName").value.trim(); const t1=document.getElementById("mT1").value; const t2=document.getElementById("mT2").value; const spe=parseInt(document.getElementById("mSpe").value)||null; const msg=document.getElementById("manmsg"); if(!name){ msg.style.color="var(--danger)"; msg.textContent="이름을 입력하세요"; return; } if(!t1){ msg.style.color="var(--danger)"; msg.textContent="타입1을 고르세요"; return; } addMon(name,[t1,t2].filter(Boolean),spe); save(); refreshDex(); msg.style.color="var(--success)"; msg.textContent=`${name} 추가됨 · 총 ${Object.keys(DEX).length}`; document.getElementById("mName").value=""; document.getElementById("mT1").value=""; document.getElementById("mT2").value=""; document.getElementById("mSpe").value=""; });
 
-document.getElementById("exportBtn").addEventListener("click",()=>{ const json=JSON.stringify({dex:DEX,builds:BUILDS}); document.getElementById("ioBox").value=json; if(navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{}); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${Object.keys(DEX).length}마리 + 빌드 ${Object.keys(BUILDS).length} 복사됨`; });
-document.getElementById("downloadBtn").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify({dex:DEX,builds:BUILDS})],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pokedex.json"; a.click(); });
-function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveBuilds(); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
+document.getElementById("exportBtn").addEventListener("click",()=>{ const json=JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS}); document.getElementById("ioBox").value=json; if(navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{}); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${Object.keys(DEX).length}마리 + 빌드 ${Object.keys(BUILDS).length} 복사됨`; });
+document.getElementById("downloadBtn").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS})],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pokedex.json"; a.click(); });
+function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null, foebuilds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; foebuilds=obj.foebuilds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveB(BUILDS); } if(foebuilds){ Object.keys(foebuilds).forEach(k=>FOEBUILDS[k]=foebuilds[k]); saveB(FOEBUILDS); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
 document.getElementById("importBtn").addEventListener("click",()=>doImport(document.getElementById("ioBox").value));
 document.getElementById("fileIn").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>doImport(r.result); r.readAsText(f); });
 
 function curVals(id){ return [...document.querySelectorAll(`#${id} .slot input`)].map(i=>i.value); }
-function foeSlots(container,presets){ container.innerHTML=""; for(let i=0;i<6;i++) container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"></div>`); }
-function mineSlots(container,presets){
+function teamSlots(container,presets,store){
   container.innerHTML="";
   for(let i=0;i<6;i++){
     container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
@@ -207,9 +207,9 @@ function mineSlots(container,presets){
     const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
     spSel.innerHTML=SPDOPTS;
-    function markToggle(){ toggle.style.color=BUILDS[nameInput.value.trim()]?'var(--accent)':'var(--muted)'; }
-    function loadBuild(){ const b=getBuild(nameInput.value.trim()); itemInput.value=b.item||""; spSel.value=b.spd||1; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
-    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setBuild(n,{item:itemInput.value.trim(),spd:parseFloat(spSel.value)||1,moves:mvs.map(s=>s.value)}); markToggle(); }
+    function markToggle(){ toggle.style.color=store[nameInput.value.trim()]?'var(--accent)':'var(--muted)'; }
+    function loadBuild(){ const b=getB(store,nameInput.value.trim()); itemInput.value=b.item||""; spSel.value=b.spd||1; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
+    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setB(store,n,{item:itemInput.value.trim(),spd:parseFloat(spSel.value)||1,moves:mvs.map(s=>s.value)}); markToggle(); }
     toggle.addEventListener('click',()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) loadBuild(); });
     nameInput.addEventListener('change',()=>{ if(!panel.hidden) loadBuild(); markToggle(); });
     nameInput.addEventListener('input',markToggle);
@@ -220,11 +220,12 @@ function mineSlots(container,presets){
   });
 }
 const minePreset=["리자몽","거북왕","피카츄","","",""], foePreset=["이상해꽃","","","","",""];
-function rebuildTeams(){ const mv=curVals("mine"), fv=curVals("foe"); mineSlots(document.getElementById("mine"), mv.length?mv:minePreset); foeSlots(document.getElementById("foe"), fv.length?fv:foePreset); }
+function rebuildTeams(){ const mv=curVals("mine"), fv=curVals("foe"); teamSlots(document.getElementById("mine"), mv.length?mv:minePreset, BUILDS); teamSlots(document.getElementById("foe"), fv.length?fv:foePreset, FOEBUILDS); }
 
 function badge(t){ return `<span class="badge" style="background:${COL[t]}">${KO[t]}</span>`; }
-function readMine(){ return [...document.querySelectorAll('#mine .tn')].map(i=>{ const m=DEX[i.value.trim()]; if(!m)return null; return {...m, build:getBuild(i.value.trim())}; }).filter(Boolean); }
-function readFoe(){ return [...document.querySelectorAll('#foe .slot input')].map(i=>DEX[i.value.trim()]).filter(Boolean); }
+function readTeam(id,store){ return [...document.querySelectorAll(`#${id} .tn`)].map(i=>{ const m=DEX[i.value.trim()]; if(!m)return null; return {...m, build:getB(store,i.value.trim())}; }).filter(Boolean); }
+function readMine(){ return readTeam('mine',BUILDS); }
+function readFoe(){ return readTeam('foe',FOEBUILDS); }
 function monLabel(m){
   const item=m.build&&m.build.item, es=m.build?effSpe(m,m.build):m.spe, boosted=m.build&&((scarf(item))||(m.build.spd&&m.build.spd>1));
   const spdBuff=m.build&&m.build.spd&&m.build.spd>1;
@@ -239,8 +240,8 @@ function monLabel(m){
 function combos(a){ const r=[]; for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)for(let k=j+1;k<a.length;k++)r.push([a[i],a[j],a[k]]); return r; }
 function evalCombo(sq,foes){
   let cov=[],miss=[],quad=0,fast=0,risk=0,rd=[];
-  foes.forEach(f=>{ let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(atkTypes(m),f.types); if(e>best)best=e; const es=effSpe(m,m.build); if(e>=2&&es&&f.spe&&es>f.spe)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
-  sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(f.types,m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
+  foes.forEach(f=>{ const fs=effSpe(f,f.build)||f.spe; let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(atkTypes(m),f.types); if(e>best)best=e; const es=effSpe(m,m.build); if(e>=2&&es&&fs&&es>fs)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
+  sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(atkTypes(f),m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
   return {sq,cov,miss,quad,fast,risk,rd,score:cov.length*100+fast*10+quad*4-risk*6};
 }
 function nameTypes(m){ return `<span style="font-weight:500;">${m.name}</span> ${m.types.map(badge).join("")}`; }
@@ -249,9 +250,9 @@ function comboDetail(sq,foes){
   foes.forEach(f=>{
     let best=null;
     sq.forEach(m=>{ const es=effSpe(m,m.build)||m.spe||0; atkTypes(m).forEach(t=>{ const e=eff(t,f.types); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
-    const cov=best.e>=2, fast=(best.es&&f.spe)?(best.es>f.spe):null;
+    const fs=effSpe(f,f.build)||f.spe; const cov=best.e>=2, fast=(best.es&&fs)?(best.es>fs):null;
     const fastTxt=fast===null?'':(fast?'<span style="color:var(--accent);"> 선공</span>':'<span style="color:var(--muted);"> 후공</span>');
-    h+=`<tr><td>${nameTypes(f)}</td><td style="text-align:right; white-space:nowrap;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
+    h+=`<tr><td>${monLabel(f)}</td><td style="text-align:right; white-space:nowrap;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
   });
   h+='</table>';
   return h;
@@ -260,7 +261,8 @@ function run(){
   const mine=readMine(),foes=readFoe(),out=document.getElementById("out");
   if(mine.length<3){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">내 팀을 3마리 이상 골라 주세요 (이름이 목록에 있어야 인식돼요).</div>'; return; }
   if(!foes.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">상대 팀을 1마리 이상 골라 주세요.</div>'; return; }
-  const anyBuild=mine.some(m=>m.build&&(m.build.item||m.build.moves.some(Boolean)));
+  const hasB=m=>m.build&&(m.build.item||m.build.moves.some(Boolean)||(m.build.spd&&m.build.spd>1));
+  const anyBuild=mine.some(hasB)||foes.some(hasB);
   const legal=combos(mine).filter(sq=>sq.filter(isMega).length<=1);
   if(!legal.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">메가는 한 배틀에 1마리만 쓸 수 있어요. 팀에 메가가 아닌 포켓몬을 더 넣어야 3마리 조합이 나와요.</div>'; return; }
   const ranked=legal.map(sq=>evalCombo(sq,foes)).sort((a,b)=>b.score-a.score).slice(0,4);
@@ -288,14 +290,14 @@ try{ const p=localStorage.getItem(PKEY); if(p) PRESETS=JSON.parse(p); }catch(e){
 function savePresets(){ try{ localStorage.setItem(PKEY,JSON.stringify(PRESETS)); }catch(e){} }
 function refreshPresets(){ const sel=document.getElementById("presetSel"); const names=Object.keys(PRESETS); sel.innerHTML=names.length?names.map(n=>`<option value="${n}">${n}</option>`).join(""):'<option value="">저장된 프리셋 없음</option>'; }
 document.getElementById("savePreset").addEventListener("click",()=>{ const nm=document.getElementById("presetName").value.trim(); if(!nm){ alert("프리셋 이름을 입력하세요"); return; } PRESETS[nm]=curVals("mine"); savePresets(); refreshPresets(); document.getElementById("presetSel").value=nm; document.getElementById("presetName").value=""; });
-document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; mineSlots(document.getElementById("mine"),PRESETS[nm]); run(); });
+document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; teamSlots(document.getElementById("mine"),PRESETS[nm],BUILDS); run(); });
 document.getElementById("delPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; if(!confirm(`'${nm}' 프리셋을 삭제할까요?`))return; delete PRESETS[nm]; savePresets(); refreshPresets(); });
 
 document.getElementById("go").addEventListener("click",run);
 refreshDex();
 refreshPresets();
-mineSlots(document.getElementById("mine"),minePreset);
-foeSlots(document.getElementById("foe"),foePreset);
+teamSlots(document.getElementById("mine"),minePreset,BUILDS);
+teamSlots(document.getElementById("foe"),foePreset,FOEBUILDS);
 run();
 </script>
 </body>
