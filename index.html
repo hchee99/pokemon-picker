@@ -106,7 +106,7 @@
   </details>
 
   <div class="teams">
-    <div><div class="teamhead" style="color:var(--accent);">내 팀 (6) · ⚙로 도구·기술 설정</div><div id="mine"></div></div>
+    <div><div class="teamhead" style="color:var(--accent);">내 팀 (6) · ⚙로 도구·기술·스피드버프 설정</div><div id="mine"></div></div>
     <div><div class="teamhead" style="color:var(--danger);">상대 팀 (6)</div><div id="foe"></div></div>
   </div>
   <datalist id="dexlist"></datalist>
@@ -123,7 +123,7 @@
   <button id="go" class="primary">최적 3마리 조합 찾기</button>
   <div id="out" style="margin-top:16px;"></div>
 
-  <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등)만 계산에 반영. 실제 배틀은 위력·특성·실능에 따라 달라질 수 있어요.</p>
+  <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등)만, 순풍·용춤 등 스피드 버프는 배율로 계산에 반영. 실제 배틀은 위력·특성·실능에 따라 달라질 수 있어요.</p>
 </div>
 
 <script>
@@ -155,10 +155,10 @@ function load(){ try{ const s=localStorage.getItem(KEY); if(s){ DEX=JSON.parse(s
 if(!load()){ seed(); save(); }
 try{ const b=localStorage.getItem(BKEY); if(b) BUILDS=JSON.parse(b); }catch(e){}
 function saveBuilds(){ try{ localStorage.setItem(BKEY,JSON.stringify(BUILDS)); }catch(e){} }
-function getBuild(name){ return BUILDS[name]||{item:"",moves:["","","",""]}; }
-function setBuild(name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m)){ delete BUILDS[name]; } else { BUILDS[name]={item:b.item,moves:b.moves}; } saveBuilds(); }
+function getBuild(name){ return BUILDS[name]||{item:"",moves:["","","",""],spd:1}; }
+function setBuild(name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m) && (!b.spd||b.spd<=1)){ delete BUILDS[name]; } else { BUILDS[name]={item:b.item,moves:b.moves,spd:b.spd||1}; } saveBuilds(); }
 function scarf(item){ return item && item.indexOf("스카프")>=0; }
-function effSpe(m,item){ if(!m.spe)return null; return scarf(item)? Math.round(m.spe*1.5) : m.spe; }
+function effSpe(m,build){ if(!m.spe)return null; let mult=1; if(build){ if(scarf(build.item)) mult*=1.5; if(build.spd&&build.spd>1) mult*=build.spd; } return Math.round(m.spe*mult); }
 function atkTypes(m){ const mv=(m.build&&m.build.moves||[]).filter(Boolean); return mv.length?[...new Set(mv)]:m.types; }
 function isMega(m){ const n=typeof m==='string'?m:m.name; return n.startsWith("메가") && !n.startsWith("메가니움"); }
 
@@ -182,6 +182,8 @@ document.getElementById("resetbtn").addEventListener("click",()=>{ if(!confirm("
 const TOPTS='<option value="">타입</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
 const MVOPTS='<option value="">기술</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
 const ITEMS=["구애스카프","구애머리띠","구애안경","생명의구슬","돌격조끼","기합의띠","진화의휘석","오랭열매","자뭉열매","붉은실","화염구슬","조개껍질방울","달의돌","까칠한모래"];
+const SPDBUFFS=[[1,"버프 없음"],[1.5,"랭크+1 (용춤 등, ×1.5)"],[2,"랭크+2 또는 순풍 (×2)"],[2.5,"랭크+3 (×2.5)"],[3,"랭크+4 또는 순풍+랭크+1 (×3)"],[3.5,"랭크+5 (×3.5)"],[4,"랭크+6 (×4)"]];
+const SPDOPTS=SPDBUFFS.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
 document.getElementById("itemlist").innerHTML=ITEMS.map(i=>`<option value="${i}"></option>`).join("");
 document.getElementById("mT1").innerHTML=TOPTS;
 document.getElementById("mT2").innerHTML='<option value="">타입2(선택)</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
@@ -198,19 +200,21 @@ function foeSlots(container,presets){ container.innerHTML=""; for(let i=0;i<6;i+
 function mineSlots(container,presets){
   container.innerHTML="";
   for(let i=0;i<6;i++){
-    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="bt" title="도구·기술 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
+    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
-    const itemInput=panel.querySelector('.it'), mvs=[...panel.querySelectorAll('.mv')];
+    const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
+    spSel.innerHTML=SPDOPTS;
     function markToggle(){ toggle.style.color=BUILDS[nameInput.value.trim()]?'var(--accent)':'var(--muted)'; }
-    function loadBuild(){ const b=getBuild(nameInput.value.trim()); itemInput.value=b.item||""; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
-    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setBuild(n,{item:itemInput.value.trim(),moves:mvs.map(s=>s.value)}); markToggle(); }
+    function loadBuild(){ const b=getBuild(nameInput.value.trim()); itemInput.value=b.item||""; spSel.value=b.spd||1; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
+    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setBuild(n,{item:itemInput.value.trim(),spd:parseFloat(spSel.value)||1,moves:mvs.map(s=>s.value)}); markToggle(); }
     toggle.addEventListener('click',()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) loadBuild(); });
     nameInput.addEventListener('change',()=>{ if(!panel.hidden) loadBuild(); markToggle(); });
     nameInput.addEventListener('input',markToggle);
     itemInput.addEventListener('change',saveCur);
+    spSel.addEventListener('change',saveCur);
     mvs.forEach(s=>s.addEventListener('change',saveCur));
     markToggle();
   });
@@ -222,18 +226,20 @@ function badge(t){ return `<span class="badge" style="background:${COL[t]}">${KO
 function readMine(){ return [...document.querySelectorAll('#mine .tn')].map(i=>{ const m=DEX[i.value.trim()]; if(!m)return null; return {...m, build:getBuild(i.value.trim())}; }).filter(Boolean); }
 function readFoe(){ return [...document.querySelectorAll('#foe .slot input')].map(i=>DEX[i.value.trim()]).filter(Boolean); }
 function monLabel(m){
-  const item=m.build&&m.build.item, es=m.build?effSpe(m,item):m.spe, boosted=scarf(item);
+  const item=m.build&&m.build.item, es=m.build?effSpe(m,m.build):m.spe, boosted=m.build&&((scarf(item))||(m.build.spd&&m.build.spd>1));
+  const spdBuff=m.build&&m.build.spd&&m.build.spd>1;
   const mv=m.build?m.build.moves.filter(Boolean):[];
   let s=`<span style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;"><span style="font-size:12px; font-weight:500;">${m.name}</span>${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}${m.types.map(badge).join("")}`;
   if(es) s+=`<span style="font-size:10px; color:${boosted?'var(--accent)':'var(--muted)'};">S${es}${boosted?'↑':''}</span>`;
   if(item) s+=`<span class="chip">${item}</span>`;
+  if(spdBuff) s+=`<span class="chip" style="background:var(--accent-bg); color:var(--accent);">×${m.build.spd} 스피드</span>`;
   if(mv.length) s+=`<span style="display:inline-flex; gap:2px; margin-left:2px;">${mv.map(t=>`<span title="${KO[t]}" style="width:9px; height:9px; border-radius:2px; background:${COL[t]};"></span>`).join("")}</span>`;
   s+=`</span>`; return s;
 }
 function combos(a){ const r=[]; for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)for(let k=j+1;k<a.length;k++)r.push([a[i],a[j],a[k]]); return r; }
 function evalCombo(sq,foes){
   let cov=[],miss=[],quad=0,fast=0,risk=0,rd=[];
-  foes.forEach(f=>{ let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(atkTypes(m),f.types); if(e>best)best=e; const es=effSpe(m,m.build&&m.build.item); if(e>=2&&es&&f.spe&&es>f.spe)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
+  foes.forEach(f=>{ let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(atkTypes(m),f.types); if(e>best)best=e; const es=effSpe(m,m.build); if(e>=2&&es&&f.spe&&es>f.spe)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
   sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(f.types,m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
   return {sq,cov,miss,quad,fast,risk,rd,score:cov.length*100+fast*10+quad*4-risk*6};
 }
@@ -242,7 +248,7 @@ function comboDetail(sq,foes){
   let h='<div style="font-size:12px; margin-bottom:6px; color:var(--muted);">상대별 처리</div><table style="width:100%; font-size:12px; border-collapse:collapse;">';
   foes.forEach(f=>{
     let best=null;
-    sq.forEach(m=>{ const es=effSpe(m,m.build&&m.build.item)||m.spe||0; atkTypes(m).forEach(t=>{ const e=eff(t,f.types); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
+    sq.forEach(m=>{ const es=effSpe(m,m.build)||m.spe||0; atkTypes(m).forEach(t=>{ const e=eff(t,f.types); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
     const cov=best.e>=2, fast=(best.es&&f.spe)?(best.es>f.spe):null;
     const fastTxt=fast===null?'':(fast?'<span style="color:var(--accent);"> 선공</span>':'<span style="color:var(--muted);"> 후공</span>');
     h+=`<tr><td>${nameTypes(f)}</td><td style="text-align:right; white-space:nowrap;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
