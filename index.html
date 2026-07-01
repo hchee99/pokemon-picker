@@ -50,8 +50,11 @@
   .bp input.it{ width:100%; }
   .bp .mvrow select{ flex:1; min-width:0; padding:0 4px; }
   .msg{ font-size:12px; }
-  .card{ border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--surface); }
+  .card{ border:0.5px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:var(--surface); cursor:pointer; }
   .card.top{ border:2px solid var(--accent); }
+  .card:hover{ border-color:var(--accent); }
+  .detail{ margin-top:10px; padding-top:10px; border-top:0.5px solid var(--border); cursor:default; }
+  .detail td{ padding:3px 0; vertical-align:top; }
   .badge{ display:inline-flex; padding:2px 7px; border-radius:999px; color:#fff; font-size:11px; font-weight:500; }
   .chip{ font-size:10px; padding:1px 6px; border-radius:6px; background:var(--surface2); color:var(--muted); }
   .pill{ font-size:12px; padding:3px 9px; border-radius:var(--radius); }
@@ -109,6 +112,14 @@
   <datalist id="dexlist"></datalist>
   <datalist id="itemlist"></datalist>
 
+  <div class="row" style="margin:0 0 14px;">
+    <input id="presetName" placeholder="프리셋 이름 (예: 대엔트리용)" style="flex:2; min-width:120px;">
+    <button id="savePreset">내 팀 저장</button>
+    <select id="presetSel" style="flex:1; min-width:110px;"></select>
+    <button id="loadPreset">불러오기</button>
+    <button id="delPreset" style="color:var(--danger);">삭제</button>
+  </div>
+
   <button id="go" class="primary">최적 3마리 조합 찾기</button>
   <div id="out" style="margin-top:16px;"></div>
 
@@ -125,6 +136,7 @@ const NOEFFECT={Normal:["Ghost"],Electric:["Ground"],Fighting:["Ghost"],Poison:[
 function mult(a,d){ if(NOEFFECT[a].includes(d))return 0; if(SUPER[a].includes(d))return 2; if(NOTVERY[a].includes(d))return 0.5; return 1; }
 function eff(a,defT){ return defT.reduce((p,d)=>p*mult(a,d),1); }
 function bestAtk(atkT,defT){ return Math.max(...atkT.map(a=>eff(a,defT))); }
+function fmtMult(v){ return v===0.25?'¼':v===0.5?'½':(''+v); }
 
 const KEY="pkmn_dex_v1", BKEY="pkmn_builds_v1";
 let DEX={}, BUILDS={};
@@ -224,6 +236,19 @@ function evalCombo(sq,foes){
   sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(f.types,m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
   return {sq,cov,miss,quad,fast,risk,rd,score:cov.length*100+fast*10+quad*4-risk*6};
 }
+function nameTypes(m){ return `<span style="font-weight:500;">${m.name}</span> ${m.types.map(badge).join("")}`; }
+function comboDetail(sq,foes){
+  let h='<div style="font-size:12px; margin-bottom:6px; color:var(--muted);">상대별 처리</div><table style="width:100%; font-size:12px; border-collapse:collapse;">';
+  foes.forEach(f=>{
+    let best=null;
+    sq.forEach(m=>{ const es=effSpe(m,m.build&&m.build.item)||m.spe||0; atkTypes(m).forEach(t=>{ const e=eff(t,f.types); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
+    const cov=best.e>=2, fast=(best.es&&f.spe)?(best.es>f.spe):null;
+    const fastTxt=fast===null?'':(fast?'<span style="color:var(--accent);"> 선공</span>':'<span style="color:var(--muted);"> 후공</span>');
+    h+=`<tr><td>${nameTypes(f)}</td><td style="text-align:right; white-space:nowrap;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
+  });
+  h+='</table>';
+  return h;
+}
 function run(){
   const mine=readMine(),foes=readFoe(),out=document.getElementById("out");
   if(mine.length<3){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">내 팀을 3마리 이상 골라 주세요 (이름이 목록에 있어야 인식돼요).</div>'; return; }
@@ -241,12 +266,25 @@ function run(){
       </div>
       ${r.miss.length?`<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">놓치는 상대: ${r.miss.map(f=>monLabel(f)).join(" ")}</div>`:'<div style="font-size:12px; color:var(--success); margin-bottom:4px;">상대 전원 2배↑ 커버</div>'}
       ${r.rd.length?`<div style="font-size:12px; color:var(--danger);">주의: ${r.rd.map(d=>d.m.name+`(${d.h})`).join(" · ")} 약점 노출</div>`:''}
+      <div class="hintline" style="font-size:11px; color:var(--muted); margin-top:6px;">▾ 클릭하면 상대별 상세</div>
+      <div class="detail" hidden>${comboDetail(r.sq,foes)}</div>
     </div>`;
   });
   out.innerHTML=html;
+  out.querySelectorAll('.card').forEach(c=>c.addEventListener('click',e=>{ if(e.target.closest('.detail'))return; const d=c.querySelector('.detail'), h=c.querySelector('.hintline'); if(!d)return; d.hidden=!d.hidden; if(h) h.textContent=d.hidden?'▾ 클릭하면 상대별 상세':'▴ 접기'; }));
 }
+const PKEY="pkmn_presets_v1";
+let PRESETS={};
+try{ const p=localStorage.getItem(PKEY); if(p) PRESETS=JSON.parse(p); }catch(e){}
+function savePresets(){ try{ localStorage.setItem(PKEY,JSON.stringify(PRESETS)); }catch(e){} }
+function refreshPresets(){ const sel=document.getElementById("presetSel"); const names=Object.keys(PRESETS); sel.innerHTML=names.length?names.map(n=>`<option value="${n}">${n}</option>`).join(""):'<option value="">저장된 프리셋 없음</option>'; }
+document.getElementById("savePreset").addEventListener("click",()=>{ const nm=document.getElementById("presetName").value.trim(); if(!nm){ alert("프리셋 이름을 입력하세요"); return; } PRESETS[nm]=curVals("mine"); savePresets(); refreshPresets(); document.getElementById("presetSel").value=nm; document.getElementById("presetName").value=""; });
+document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; mineSlots(document.getElementById("mine"),PRESETS[nm]); run(); });
+document.getElementById("delPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; if(!confirm(`'${nm}' 프리셋을 삭제할까요?`))return; delete PRESETS[nm]; savePresets(); refreshPresets(); });
+
 document.getElementById("go").addEventListener("click",run);
 refreshDex();
+refreshPresets();
 mineSlots(document.getElementById("mine"),minePreset);
 foeSlots(document.getElementById("foe"),foePreset);
 run();
