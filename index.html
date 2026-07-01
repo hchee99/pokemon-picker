@@ -160,6 +160,7 @@ function setBuild(name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m)){
 function scarf(item){ return item && item.indexOf("스카프")>=0; }
 function effSpe(m,item){ if(!m.spe)return null; return scarf(item)? Math.round(m.spe*1.5) : m.spe; }
 function atkTypes(m){ const mv=(m.build&&m.build.moves||[]).filter(Boolean); return mv.length?[...new Set(mv)]:m.types; }
+function isMega(m){ const n=typeof m==='string'?m:m.name; return n.startsWith("메가") && !n.startsWith("메가니움"); }
 
 function refreshDex(){ const names=Object.keys(DEX); document.getElementById("dexlist").innerHTML=names.map(n=>`<option value="${n}"></option>`).join(""); document.getElementById("dexcount").textContent=`· ${names.length}마리 저장됨`; }
 
@@ -223,7 +224,7 @@ function readFoe(){ return [...document.querySelectorAll('#foe .slot input')].ma
 function monLabel(m){
   const item=m.build&&m.build.item, es=m.build?effSpe(m,item):m.spe, boosted=scarf(item);
   const mv=m.build?m.build.moves.filter(Boolean):[];
-  let s=`<span style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;"><span style="font-size:12px; font-weight:500;">${m.name}</span>${m.types.map(badge).join("")}`;
+  let s=`<span style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;"><span style="font-size:12px; font-weight:500;">${m.name}</span>${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}${m.types.map(badge).join("")}`;
   if(es) s+=`<span style="font-size:10px; color:${boosted?'var(--accent)':'var(--muted)'};">S${es}${boosted?'↑':''}</span>`;
   if(item) s+=`<span class="chip">${item}</span>`;
   if(mv.length) s+=`<span style="display:inline-flex; gap:2px; margin-left:2px;">${mv.map(t=>`<span title="${KO[t]}" style="width:9px; height:9px; border-radius:2px; background:${COL[t]};"></span>`).join("")}</span>`;
@@ -254,8 +255,10 @@ function run(){
   if(mine.length<3){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">내 팀을 3마리 이상 골라 주세요 (이름이 목록에 있어야 인식돼요).</div>'; return; }
   if(!foes.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">상대 팀을 1마리 이상 골라 주세요.</div>'; return; }
   const anyBuild=mine.some(m=>m.build&&(m.build.item||m.build.moves.some(Boolean)));
-  const ranked=combos(mine).map(sq=>evalCombo(sq,foes)).sort((a,b)=>b.score-a.score).slice(0,4);
-  let html=`<div style="font-size:13px; color:var(--muted); margin-bottom:10px;">상대 <b>${foes.length}마리</b> 기준 상위 추천 ${anyBuild?'· <span style="color:var(--accent);">기술·도구 반영됨</span>':'· (기술 미설정 시 자속 기준)'}</div>`;
+  const legal=combos(mine).filter(sq=>sq.filter(isMega).length<=1);
+  if(!legal.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">메가는 한 배틀에 1마리만 쓸 수 있어요. 팀에 메가가 아닌 포켓몬을 더 넣어야 3마리 조합이 나와요.</div>'; return; }
+  const ranked=legal.map(sq=>evalCombo(sq,foes)).sort((a,b)=>b.score-a.score).slice(0,4);
+  let html=`<div style="font-size:13px; color:var(--muted); margin-bottom:10px;">상대 <b>${foes.length}마리</b> 기준 상위 추천 · <span style="color:var(--muted);">메가 1마리 제한 적용</span> ${anyBuild?'· <span style="color:var(--accent);">기술·도구 반영됨</span>':'· (기술 미설정 시 자속 기준)'}</div>`;
   ranked.forEach((r,i)=>{ const top=i===0;
     html+=`<div class="card ${top?'top':''}">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">${top?'<span class="pill" style="background:var(--accent-bg); color:var(--accent);">추천</span>':`<span style="font-size:12px; color:var(--muted);">${i+1}위</span>`}${r.sq.map(monLabel).join('<span style="color:var(--muted);">·</span>')}</div>
