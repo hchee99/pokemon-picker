@@ -43,7 +43,8 @@
   .slot{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
   .slot span.idx{ font-size:11px; color:var(--muted); width:14px; }
   .slot input{ flex:1; min-width:0; }
-  .bt{ height:32px; width:34px; padding:0; flex-shrink:0; }
+  .bt, .pk{ height:32px; width:34px; padding:0; flex-shrink:0; font-size:13px; }
+  .pktile:hover{ border-color:var(--accent) !important; }
   .bp{ margin:-2px 0 8px 20px; padding:8px; background:var(--surface2); border-radius:var(--radius); }
   .bp .mvrow{ display:flex; gap:4px; margin-top:6px; }
   .bp input, .bp select{ height:30px; font-size:12px; }
@@ -123,6 +124,16 @@
   <button id="go" class="primary">최적 3마리 조합 찾기</button>
   <div id="out" style="margin-top:16px;"></div>
 
+  <div id="picker" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:flex-start; justify-content:center;">
+    <div style="background:var(--surface); border-radius:12px; margin-top:6vh; width:min(680px,92vw); max-height:82vh; display:flex; flex-direction:column; padding:14px;">
+      <div class="row" style="margin-bottom:10px;">
+        <input id="pkSearch" placeholder="이름·타입으로 검색 (예: 불꽃, 리자몽)" style="flex:1;">
+        <button id="pkClose">닫기</button>
+      </div>
+      <div id="pkGrid" style="overflow:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(92px,1fr)); gap:6px;"></div>
+    </div>
+  </div>
+
   <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등)만, 순풍·용춤 등 스피드 버프는 배율로 계산에 반영. 실제 배틀은 위력·특성·실능에 따라 달라질 수 있어요.</p>
 </div>
 
@@ -200,10 +211,11 @@ function curVals(id){ return [...document.querySelectorAll(`#${id} .slot input`)
 function teamSlots(container,presets,store){
   container.innerHTML="";
   for(let i=0;i<6;i++){
-    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
+    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
+    slot.querySelector('.pk').addEventListener('click',()=>openPicker(nameInput));
     const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
     spSel.innerHTML=SPDOPTS;
@@ -226,6 +238,21 @@ function badge(t){ return `<span class="badge" style="background:${COL[t]}">${KO
 function readTeam(id,store){ return [...document.querySelectorAll(`#${id} .tn`)].map(i=>{ const m=DEX[i.value.trim()]; if(!m)return null; return {...m, build:getB(store,i.value.trim())}; }).filter(Boolean); }
 function readMine(){ return readTeam('mine',BUILDS); }
 function readFoe(){ return readTeam('foe',FOEBUILDS); }
+
+let pickerTarget=null;
+function renderPicker(q){
+  q=(q||"").trim();
+  const grid=document.getElementById("pkGrid");
+  const names=Object.keys(DEX).filter(n=>{ if(!q)return true; const m=DEX[n]; return n.includes(q)||m.types.some(t=>KO[t].includes(q)); });
+  grid.innerHTML=names.length?names.map(n=>{ const m=DEX[n]; const tint=(COL[m.types[0]]||"#888888")+"22"; return `<button type="button" class="pktile" data-n="${n}" style="display:flex; flex-direction:column; gap:3px; align-items:center; padding:6px 4px; border:0.5px solid var(--border); border-radius:8px; background:${tint}; color:var(--text); cursor:pointer;">${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}<span style="font-size:11px; font-weight:500; text-align:center; line-height:1.2;">${n}</span><span style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${m.types.map(badge).join("")}</span></button>`; }).join(""):'<div style="color:var(--muted); font-size:13px; padding:12px;">검색 결과 없음</div>';
+}
+function openPicker(input){ pickerTarget=input; document.getElementById("pkSearch").value=""; renderPicker(""); document.getElementById("picker").style.display="flex"; setTimeout(()=>document.getElementById("pkSearch").focus(),0); }
+function closePicker(){ document.getElementById("picker").style.display="none"; pickerTarget=null; }
+document.getElementById("pkSearch").addEventListener("input",e=>renderPicker(e.target.value));
+document.getElementById("pkClose").addEventListener("click",closePicker);
+document.getElementById("picker").addEventListener("click",e=>{ if(e.target.id==="picker") closePicker(); });
+document.getElementById("pkGrid").addEventListener("click",e=>{ const t=e.target.closest(".pktile"); if(!t||!pickerTarget)return; pickerTarget.value=t.dataset.n; pickerTarget.dispatchEvent(new Event("input")); pickerTarget.dispatchEvent(new Event("change")); closePicker(); run(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape" && document.getElementById("picker").style.display==="flex") closePicker(); });
 function monLabel(m){
   const item=m.build&&m.build.item, es=m.build?effSpe(m,m.build):m.spe, boosted=m.build&&((scarf(item))||(m.build.spd&&m.build.spd>1));
   const spdBuff=m.build&&m.build.spd&&m.build.spd>1;
