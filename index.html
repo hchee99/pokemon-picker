@@ -134,6 +134,16 @@
     </div>
   </div>
 
+  <details style="margin-top:20px;">
+    <summary>타입 상성 계산기 (방어 타입 → 약점·반감)</summary>
+    <p class="hint">방어 포켓몬의 타입을 고르면 18개 공격 타입이 몇 배로 들어가는지 보여줘요.</p>
+    <div class="row" style="margin-bottom:10px;">
+      <select id="calcT1" style="flex:1; min-width:110px;"></select>
+      <select id="calcT2" style="flex:1; min-width:110px;"></select>
+    </div>
+    <div id="calcOut"></div>
+  </details>
+
   <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등)만, 순풍·용춤 등 스피드 버프는 배율로 계산에 반영. 실제 배틀은 위력·특성·실능에 따라 달라질 수 있어요.</p>
 </div>
 
@@ -327,6 +337,23 @@ function refreshPresets(){ const sel=document.getElementById("presetSel"); const
 document.getElementById("savePreset").addEventListener("click",()=>{ const nm=document.getElementById("presetName").value.trim(); if(!nm){ alert("프리셋 이름을 입력하세요"); return; } PRESETS[nm]=curVals("mine"); savePresets(); refreshPresets(); document.getElementById("presetSel").value=nm; document.getElementById("presetName").value=""; });
 document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; teamSlots(document.getElementById("mine"),PRESETS[nm],BUILDS); run(); });
 document.getElementById("delPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; if(!confirm(`'${nm}' 프리셋을 삭제할까요?`))return; delete PRESETS[nm]; savePresets(); refreshPresets(); });
+
+document.getElementById("calcT1").innerHTML=Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
+document.getElementById("calcT2").innerHTML='<option value="">타입2 없음</option>'+Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
+document.getElementById("calcT1").value="Fire"; document.getElementById("calcT2").value="Flying";
+function calcTypes(){
+  const t1=document.getElementById("calcT1").value, t2=document.getElementById("calcT2").value;
+  const uniq=[...new Set([t1,t2].filter(Boolean))]; const out=document.getElementById("calcOut");
+  if(!uniq.length){ out.innerHTML=""; return; }
+  const buckets={};
+  Object.values(TMAP).forEach(a=>{ const v=eff(a,uniq); if(v!==1)(buckets[v]=buckets[v]||[]).push(a); });
+  const groups=[[4,"4배 약점","var(--danger)"],[2,"2배 약점","var(--danger)"],[0.25,"¼ 반감","var(--success)"],[0.5,"½ 반감","var(--success)"],[0,"무효","var(--muted)"]];
+  let html=""; groups.forEach(([k,label,color])=>{ const list=buckets[k]||[]; if(!list.length)return; html+=`<div style="margin-bottom:8px;"><div style="font-size:12px; font-weight:500; color:${color}; margin-bottom:4px;">${label}</div><div style="display:flex; flex-wrap:wrap; gap:5px;">${list.map(a=>badge(a)).join("")}</div></div>`; });
+  out.innerHTML=html||'<div style="font-size:12px; color:var(--muted);">특별한 상성 없음 (모두 1배)</div>';
+}
+document.getElementById("calcT1").addEventListener("change",calcTypes);
+document.getElementById("calcT2").addEventListener("change",calcTypes);
+calcTypes();
 
 document.getElementById("go").addEventListener("click",run);
 refreshDex();
