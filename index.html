@@ -151,14 +151,15 @@ function fmtMult(v){ return v===0.25?'¼':v===0.5?'½':(''+v); }
 
 const KEY="pkmn_dex_v1", BKEY="pkmn_builds_v1", FBKEY="pkmn_foebuilds_v1";
 let DEX={}, BUILDS={}, FOEBUILDS={};
-function addMon(name,types,spe){
+function addMon(name,types,spe,img){
   if(!name||!types.length)return;
   types=[...new Set(types)]; const sig=types.join();
-  if(DEX[name] && DEX[name].types.join()===sig){ if(spe)DEX[name].spe=spe; return; }
+  if(DEX[name] && DEX[name].types.join()===sig){ if(spe)DEX[name].spe=spe; if(img)DEX[name].img=img; return; }
   let key=name;
   if(DEX[name] && DEX[name].types.join()!==sig){ key=name+" ("+types.map(t=>KO[t]).join("/")+")"; }
-  DEX[key]={name:key,base:name,types,spe:spe||null};
+  DEX[key]={name:key,base:name,types,spe:spe||null,img:img||null};
 }
+const SPRITE=n=>`https://s-stats-platform-cdn.op.gg/pokemon/images/pokemon/${n}.png`;
 const SEED=[["이상해꽃",["Grass","Poison"],80],["리자몽",["Fire","Flying"],100],["거북왕",["Water"],78],["피카츄",["Electric"],90]];
 function seed(){ SEED.forEach(m=>addMon(m[0],m[1],m[2])); }
 function save(){ try{ localStorage.setItem(KEY,JSON.stringify(DEX)); }catch(e){} }
@@ -179,13 +180,13 @@ function refreshDex(){ const names=Object.keys(DEX); document.getElementById("de
 function parseHTML(html){
   let n=0;
   try{ const doc=new DOMParser().parseFromString(html,"text/html"); const anchors=doc.querySelectorAll('a[href*="/pokedex/"]'); if(!anchors.length) return 0;
-    anchors.forEach(a=>{ const nameEl=a.querySelector('.truncate'); const name=nameEl?nameEl.textContent.trim():""; const types=[...a.querySelectorAll('span[style*="background-color"]')].map(s=>s.textContent.trim()).map(t=>TMAP[t]).filter(Boolean); let spe=null; const host=a.closest('[class*="min-w-"]'); if(host){ const cells=[...host.querySelectorAll('div')].filter(d=>d.className&&d.className.includes('w-[46px]')); if(cells.length>=6) spe=parseInt(cells[5].textContent.trim())||null; } if(name&&types.length){ addMon(name,types,spe); n++; } });
+    anchors.forEach(a=>{ const nameEl=a.querySelector('.truncate'); const name=nameEl?nameEl.textContent.trim():""; const types=[...a.querySelectorAll('span[style*="background-color"]')].map(s=>s.textContent.trim()).map(t=>TMAP[t]).filter(Boolean); let spe=null; const host=a.closest('[class*="min-w-"]'); if(host){ const cells=[...host.querySelectorAll('div')].filter(d=>d.className&&d.className.includes('w-[46px]')); if(cells.length>=6) spe=parseInt(cells[5].textContent.trim())||null; } let img=null; const im=[...a.querySelectorAll('img')].map(x=>x.getAttribute('src')||"").find(s=>/\/images\/pokemon\/\d+\.png/.test(s)); if(im){ const mm=im.match(/\/images\/pokemon\/(\d+)\.png/); if(mm) img=SPRITE(mm[1]); } if(name&&types.length){ addMon(name,types,spe,img); n++; } });
   }catch(e){}
   return n;
 }
 function parseText(txt){
   const lines=txt.split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length); const isInt=s=>/^\d+$/.test(s); let n=0;
-  for(let i=0;i<lines.length;i++){ if(/^#\d+/.test(lines[i])){ let j=i-1; const types=[]; while(j>=0 && TMAP[lines[j]]){ types.unshift(TMAP[lines[j]]); j--; } const name=j>=0?lines[j]:""; let k=i+1; const stats=[]; while(k<lines.length){ if(isInt(lines[k])){ while(k<lines.length && isInt(lines[k])){ stats.push(parseInt(lines[k])); k++; } break; } k++; } const spe=stats.length>=6?stats[5]:null; if(name&&types.length){ addMon(name,types,spe); n++; } } }
+  for(let i=0;i<lines.length;i++){ if(/^#\d+/.test(lines[i])){ const dexnum=lines[i].match(/^#(\d+)/)[1]; let j=i-1; const types=[]; while(j>=0 && TMAP[lines[j]]){ types.unshift(TMAP[lines[j]]); j--; } const name=j>=0?lines[j]:""; let k=i+1; const stats=[]; while(k<lines.length){ if(isInt(lines[k])){ while(k<lines.length && isInt(lines[k])){ stats.push(parseInt(lines[k])); k++; } break; } k++; } const spe=stats.length>=6?stats[5]:null; const img=SPRITE(parseInt(dexnum,10)); if(name&&types.length){ addMon(name,types,spe,img); n++; } } }
   return n;
 }
 document.getElementById("addbtn").addEventListener("click",()=>{ const raw=document.getElementById("paste").value; const before=Object.keys(DEX).length; let n=parseHTML(raw); if(n===0) n=parseText(raw); save(); refreshDex(); document.getElementById("paste").value=""; document.getElementById("addmsg").textContent=n?`인식 ${n} · 신규 ${Object.keys(DEX).length-before} · 총 ${Object.keys(DEX).length}`:"인식된 포켓몬이 없어요"; });
@@ -203,7 +204,7 @@ document.getElementById("manbtn").addEventListener("click",()=>{ const name=docu
 
 document.getElementById("exportBtn").addEventListener("click",()=>{ const json=JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS}); document.getElementById("ioBox").value=json; if(navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{}); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${Object.keys(DEX).length}마리 + 빌드 ${Object.keys(BUILDS).length} 복사됨`; });
 document.getElementById("downloadBtn").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS})],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pokedex.json"; a.click(); });
-function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null, foebuilds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; foebuilds=obj.foebuilds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveB(BUILDS); } if(foebuilds){ Object.keys(foebuilds).forEach(k=>FOEBUILDS[k]=foebuilds[k]); saveB(FOEBUILDS); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
+function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null, foebuilds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; foebuilds=obj.foebuilds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null,img:m.img||null}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveB(BUILDS); } if(foebuilds){ Object.keys(foebuilds).forEach(k=>FOEBUILDS[k]=foebuilds[k]); saveB(FOEBUILDS); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
 document.getElementById("importBtn").addEventListener("click",()=>doImport(document.getElementById("ioBox").value));
 document.getElementById("fileIn").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>doImport(r.result); r.readAsText(f); });
 
@@ -244,7 +245,7 @@ function renderPicker(q){
   q=(q||"").trim();
   const grid=document.getElementById("pkGrid");
   const names=Object.keys(DEX).filter(n=>{ if(!q)return true; const m=DEX[n]; return n.includes(q)||m.types.some(t=>KO[t].includes(q)); });
-  grid.innerHTML=names.length?names.map(n=>{ const m=DEX[n]; const tint=(COL[m.types[0]]||"#888888")+"22"; return `<button type="button" class="pktile" data-n="${n}" style="display:flex; flex-direction:column; gap:3px; align-items:center; padding:6px 4px; border:0.5px solid var(--border); border-radius:8px; background:${tint}; color:var(--text); cursor:pointer;">${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}<span style="font-size:11px; font-weight:500; text-align:center; line-height:1.2;">${n}</span><span style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${m.types.map(badge).join("")}</span></button>`; }).join(""):'<div style="color:var(--muted); font-size:13px; padding:12px;">검색 결과 없음</div>';
+  grid.innerHTML=names.length?names.map(n=>{ const m=DEX[n]; const tint=(COL[m.types[0]]||"#888888")+"22"; return `<button type="button" class="pktile" data-n="${n}" style="display:flex; flex-direction:column; gap:3px; align-items:center; padding:6px 4px; border:0.5px solid var(--border); border-radius:8px; background:${tint}; color:var(--text); cursor:pointer;">${m.img?`<img src="${m.img}" alt="" width="48" height="48" loading="lazy" style="width:48px; height:48px; object-fit:contain;" onerror="this.style.display='none'">`:''}${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}<span style="font-size:11px; font-weight:500; text-align:center; line-height:1.2;">${n}</span><span style="display:flex; gap:2px; flex-wrap:wrap; justify-content:center;">${m.types.map(badge).join("")}</span></button>`; }).join(""):'<div style="color:var(--muted); font-size:13px; padding:12px;">검색 결과 없음</div>';
 }
 function openPicker(input){ pickerTarget=input; document.getElementById("pkSearch").value=""; renderPicker(""); document.getElementById("picker").style.display="flex"; setTimeout(()=>document.getElementById("pkSearch").focus(),0); }
 function closePicker(){ document.getElementById("picker").style.display="none"; pickerTarget=null; }
@@ -257,7 +258,7 @@ function monLabel(m){
   const item=m.build&&m.build.item, es=m.build?effSpe(m,m.build):m.spe, boosted=m.build&&((scarf(item))||(m.build.spd&&m.build.spd>1));
   const spdBuff=m.build&&m.build.spd&&m.build.spd>1;
   const mv=m.build?m.build.moves.filter(Boolean):[];
-  let s=`<span style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;"><span style="font-size:12px; font-weight:500;">${m.name}</span>${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}${m.types.map(badge).join("")}`;
+  let s=`<span style="display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap;">${m.img?`<img src="${m.img}" alt="" width="18" height="18" style="width:18px; height:18px; object-fit:contain;" onerror="this.style.display='none'">`:''}<span style="font-size:12px; font-weight:500;">${m.name}</span>${isMega(m)?'<span class="chip" style="background:var(--accent-bg); color:var(--accent);">M</span>':''}${m.types.map(badge).join("")}`;
   if(es) s+=`<span style="font-size:10px; color:${boosted?'var(--accent)':'var(--muted)'};">S${es}${boosted?'↑':''}</span>`;
   if(item) s+=`<span class="chip">${item}</span>`;
   if(spdBuff) s+=`<span class="chip" style="background:var(--accent-bg); color:var(--accent);">×${m.build.spd} 스피드</span>`;
