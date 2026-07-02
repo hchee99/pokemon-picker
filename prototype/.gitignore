@@ -1,5 +1,7 @@
 refs/
 debug_crops/
 pokedex.json
-shot*.png
+shot*
+ref*_*.png
 *.png
+*.jpg

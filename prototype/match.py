@@ -1,47 +1,30 @@
 """
-포켓몬 팀 프리뷰 인식 프로토타입 (1단계 검증용, PC에서 실행)
+포켓몬 팀 프리뷰 인식 프로토타입 v3 (배경분리 + 색/모양 매칭)
 
-목적: 팀 프리뷰 스크린샷에서 상대 6마리 스프라이트를 잘라내
-      우리가 가진 레퍼런스 스프라이트(317장)와 매칭해 정확도를 확인한다.
-      => APK 만들기 전에 "인식이 되는가?"만 값싸게 검증.
+핵심: 크롭에서 마젠타 패널을 지우고, 중앙의 가장 큰 덩어리(=스프라이트)만 오려낸 뒤,
+      레퍼런스 스프라이트와 (1) 색 히스토그램 (2) 모양 상관도 로 비교.
+배경 슬라이딩 매칭의 오탐 문제를 없앰.
 
-준비물:
-  1) 파이썬 + 라이브러리:  pip install opencv-python numpy
-  2) 사이트에서 "JSON 파일로 저장"한 pokedex.json 을 이 폴더에 둔다
-  3) 팀 프리뷰 스크린샷을 이 폴더에 shot.png 로 저장
-
-실행:
+  pip install opencv-python numpy
   python match.py shot.png
-결과:
-  - refs/ 폴더에 레퍼런스 스프라이트 자동 다운로드(최초 1회)
-  - debug_crops/ 에 잘라낸 상대 6칸 이미지 저장 (크롭 좌표 확인용)
-  - 콘솔에 각 칸별 top-3 후보 + 점수 출력
-
-크롭이 엉뚱하면 아래 CONFIG 의 좌표(화면 비율)를 조정하면 된다.
 """
 import cv2, numpy as np, json, os, sys, urllib.request, hashlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(HERE, "refs")
-DBG = os.path.join(HERE, "debug_crops")
-os.makedirs(CACHE, exist_ok=True)
-os.makedirs(DBG, exist_ok=True)
+CACHE = os.path.join(HERE, "refs"); DBG = os.path.join(HERE, "debug_crops")
+os.makedirs(CACHE, exist_ok=True); os.makedirs(DBG, exist_ok=True)
 
-# ---- CONFIG: 상대 6칸 크롭 위치 (스크린샷 가로/세로 대비 비율) ----
-# 오른쪽 세로 열에 상대 6마리. 스프라이트는 각 빨간 패널의 왼쪽에 위치.
-# 값은 추정치이므로 debug_crops 결과 보고 조정하세요.
-COL_X0, COL_X1 = 0.735, 0.865      # 스프라이트가 들어있는 가로 구간
-ROW_TOP, ROW_BOT = 0.14, 0.92      # 6칸이 차지하는 세로 구간(첫칸 위 ~ 마지막칸 아래)
+COL_X0, COL_X1 = 0.735, 0.865
+ROW_TOP, ROW_BOT = 0.14, 0.92
 N = 6
+# 크롭 내부에서 스프라이트가 있는 '패널 안쪽 중앙' 영역(바깥 모서리/아이콘 제외)
+SP_X0, SP_X1 = 0.11, 0.66
+SP_Y0, SP_Y1 = 0.13, 0.87
 
 def load_dex(path):
-    data = json.load(open(path, encoding="utf-8"))
-    dex = data.get("dex", data)
-    out = []
-    for m in dex.values():
-        if isinstance(m, dict) and m.get("img") and m.get("types"):
-            out.append({"name": m["name"], "img": m["img"], "types": m["types"]})
-    return out
+    data = json.load(open(path, encoding="utf-8")); dex = data.get("dex", data)
+    return [{"name": m["name"], "img": m["img"], "types": m["types"]}
+            for m in dex.values() if isinstance(m, dict) and m.get("img") and m.get("types")]
 
 def fetch_bytes(url):
     fn = os.path.join(CACHE, hashlib.md5(url.encode()).hexdigest() + ".img")
@@ -50,85 +33,86 @@ def fetch_bytes(url):
         open(fn, "wb").write(urllib.request.urlopen(req, timeout=20).read())
     return np.frombuffer(open(fn, "rb").read(), np.uint8)
 
+def descriptor(bgr, mask):
+    """스프라이트 bbox -> (흰배경 96x96 그레이, HS 히스토그램)"""
+    ys, xs = np.where(mask > 0)
+    if len(xs) < 30: return None
+    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    b = bgr[y0:y1+1, x0:x1+1].copy(); m = mask[y0:y1+1, x0:x1+1]
+    b[m == 0] = (255, 255, 255)
+    gray = cv2.resize(cv2.cvtColor(b, cv2.COLOR_BGR2GRAY), (96, 96))
+    hsv = cv2.cvtColor(b, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], m, [30, 32], [0, 180, 0, 256])
+    cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+    return gray, hist
+
 def prep_ref(url):
-    """레퍼런스: 투명 배경 제거 -> 스프라이트 bbox 크롭 -> 128 그레이"""
     try:
-        raw = fetch_bytes(url)
-        img = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
+        img = cv2.imdecode(fetch_bytes(url), cv2.IMREAD_UNCHANGED)
         if img is None: return None
     except Exception:
         return None
     if img.ndim == 3 and img.shape[2] == 4:
-        alpha = img[:, :, 3]; bgr = img[:, :, :3]; mask = alpha > 16
+        bgr = img[:, :, :3]; mask = (img[:, :, 3] > 16).astype(np.uint8)*255
     else:
         bgr = img if img.ndim == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY); mask = g < 248
-    ys, xs = np.where(mask)
-    if len(xs) < 10:
-        g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    else:
-        bgr = bgr[ys.min():ys.max()+1, xs.min():xs.max()+1]
-        g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    return cv2.resize(g, (128, 128))
+        mask = (cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) < 248).astype(np.uint8)*255
+    return descriptor(bgr, mask)
 
-def prep_crop(bgr):
-    g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    return cv2.resize(g, (128, 128))
+def extract_from_crop(crop, dbg=None):
+    """크롭 -> 마젠타 제거 + 패널 안쪽 중앙 최대 덩어리 = 스프라이트 마스크"""
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    Hh, S, V = cv2.split(hsv)
+    magenta = (((Hh >= 158) | (Hh <= 6)) & (S > 55) & (V > 35))
+    ch, cw = crop.shape[:2]
+    region = np.zeros((ch, cw), bool)
+    region[int(ch*SP_Y0):int(ch*SP_Y1), int(cw*SP_X0):int(cw*SP_X1)] = True
+    fg = (~magenta) & region & (V > 25)
+    fg = fg.astype(np.uint8)*255
+    fg = cv2.morphologyEx(fg, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    fg = cv2.morphologyEx(fg, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(fg, 8)
+    if n <= 1: return None
+    best = max(range(1, n), key=lambda i: stats[i, cv2.CC_STAT_AREA])
+    mask = (lab == best).astype(np.uint8)*255
+    mask = cv2.dilate(mask, np.ones((5, 5), np.uint8))
+    if dbg:
+        vis = crop.copy(); vis[mask == 0] = (255, 255, 255)
+        cv2.imwrite(dbg, vis)
+    return descriptor(crop, mask)
 
-orb = cv2.ORB_create(500)
-def orb_des(gray):
-    _, des = orb.detectAndCompute(gray, None); return des
-bf = cv2.BFMatcher(cv2.NORM_HAMMING)
-def orb_score(d1, d2):
-    if d1 is None or d2 is None: return 0
-    try:
-        m = bf.knnMatch(d1, d2, k=2)
-    except cv2.error:
-        return 0
-    good = 0
-    for pair in m:
-        if len(pair) == 2 and pair[0].distance < 0.75 * pair[1].distance: good += 1
-    return good
-def tmpl_score(a, b):
-    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED).max())
+def score(cd, rd):
+    shape = float(cv2.matchTemplate(cd[0], rd[0], cv2.TM_CCOEFF_NORMED)[0, 0])
+    color = float(cv2.compareHist(cd[1], rd[1], cv2.HISTCMP_CORREL))
+    return 0.6*color + 0.4*shape, color, shape
 
 def main():
-    if len(sys.argv) < 2:
-        print("사용법: python match.py <스크린샷파일>  (예: python match.py shot.png)"); return
-    shot = cv2.imread(sys.argv[1])
-    if shot is None:
-        print("스크린샷을 못 읽었어요:", sys.argv[1]); return
-    H, W = shot.shape[:2]
-    dexp = os.path.join(HERE, "pokedex.json")
-    if not os.path.exists(dexp):
-        print("pokedex.json 이 이 폴더에 없어요. 사이트에서 'JSON 파일로 저장' 후 여기로 옮기세요."); return
-    mons = load_dex(dexp)
-    print(f"레퍼런스 {len(mons)}마리 준비 중(최초 1회 다운로드)...")
+    shot = cv2.imread(sys.argv[1] if len(sys.argv) > 1 else "shot.png.jpg")
+    if shot is None: print("스크린샷 못 읽음"); return
+    H, W = shot.shape[:2]; print(f"스크린샷 {W}x{H}")
+    mons = load_dex(os.path.join(HERE, "pokedex.json"))
+    print(f"레퍼런스 {len(mons)}마리 준비...")
     refs = []
     for i, m in enumerate(mons):
-        g = prep_ref(m["img"])
-        if g is not None:
-            refs.append({**m, "g": g, "d": orb_des(g)})
-        if (i+1) % 50 == 0: print(f"  ...{i+1}/{len(mons)}")
-    print(f"레퍼런스 로드 완료: {len(refs)}\n")
+        d = prep_ref(m["img"])
+        if d: refs.append({**m, "d": d})
+        if (i+1) % 80 == 0: print(f"  ...{i+1}/{len(mons)}")
+    print(f"완료: {len(refs)}\n")
 
-    x0, x1 = int(W*COL_X0), int(W*COL_X1)
-    band = (ROW_BOT - ROW_TOP) / N
+    x0, x1 = int(W*COL_X0), int(W*COL_X1); band = (ROW_BOT-ROW_TOP)/N
     for s in range(N):
-        cy0 = int(H*(ROW_TOP + band*s)); cy1 = int(H*(ROW_TOP + band*(s+1)))
+        cy0 = int(H*(ROW_TOP+band*s)); cy1 = int(H*(ROW_TOP+band*(s+1)))
         crop = shot[cy0:cy1, x0:x1]
-        cv2.imwrite(os.path.join(DBG, f"slot{s+1}.png"), crop)
-        cg = prep_crop(crop); cd = orb_des(cg)
-        scored = []
-        for r in refs:
-            scored.append((orb_score(cd, r["d"]), tmpl_score(cg, r["g"]), r["name"], "/".join(r["types"])))
-        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
-        print(f"[{s+1}번칸] 추정:")
-        for orbn, tm, name, ty in scored[:3]:
-            print(f"    {name:<16} ({ty})   ORB매칭 {orbn:>3}  |  템플릿 {tm:.2f}")
+        cd = extract_from_crop(crop, os.path.join(DBG, f"ex_full{s+1}.png"))
+        if cd is None:
+            print(f"[{s+1}번칸] 스프라이트 추출 실패\n"); continue
+        scored = sorted(([*score(cd, r["d"]), r["name"], "/".join(r["types"])] for r in refs),
+                        key=lambda t: t[0], reverse=True)
+        print(f"[{s+1}번칸]")
+        for tot, col, sh, name, ty in scored[:3]:
+            print(f"    {name:<16} ({ty})   종합 {tot:.3f} (색 {col:.2f} 모양 {sh:.2f})")
         print()
-    print("crop 이 엉뚱하면 match.py 상단 CONFIG 좌표를 조정하고 다시 실행하세요.")
-    print("debug_crops/ 안의 slot1~6.png 로 크롭 위치를 확인할 수 있어요.")
+    print("추출 결과: debug_crops/extract1~6.png (흰배경에 스프라이트만 남아야 정상)")
 
 if __name__ == "__main__":
     main()
