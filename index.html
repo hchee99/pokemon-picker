@@ -144,7 +144,7 @@
     <div id="calcOut"></div>
   </details>
 
-  <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등)만, 순풍·용춤 등 스피드 버프는 배율로 계산에 반영. 실제 배틀은 위력·특성·실능에 따라 달라질 수 있어요.</p>
+  <p class="foot">타입 상성 기반 · 기술은 타입만, 도구는 스피드계(구애스카프 등), 순풍·용춤 등 스피드 버프, 부유·두꺼운지방 등 주요 특성을 계산에 반영(⚙에서 특성 선택). 실제 배틀은 위력·실능 등에 따라 달라질 수 있어요.</p>
 </div>
 
 <script>
@@ -161,14 +161,19 @@ function fmtMult(v){ return v===0.25?'¼':v===0.5?'½':(''+v); }
 
 const KEY="pkmn_dex_v1", BKEY="pkmn_builds_v1", FBKEY="pkmn_foebuilds_v1";
 let DEX={}, BUILDS={}, FOEBUILDS={};
-function addMon(name,types,spe,img){
+function addMon(name,types,spe,img,abilities){
   if(!name||!types.length)return;
   types=[...new Set(types)]; const sig=types.join();
-  if(DEX[name] && DEX[name].types.join()===sig){ if(spe)DEX[name].spe=spe; if(img)DEX[name].img=img; return; }
+  if(DEX[name] && DEX[name].types.join()===sig){ if(spe)DEX[name].spe=spe; if(img)DEX[name].img=img; if(abilities&&abilities.length)DEX[name].abilities=abilities; return; }
   let key=name;
   if(DEX[name] && DEX[name].types.join()!==sig){ key=name+" ("+types.map(t=>KO[t]).join("/")+")"; }
-  DEX[key]={name:key,base:name,types,spe:spe||null,img:img||null};
+  DEX[key]={name:key,base:name,types,spe:spe||null,img:img||null,abilities:abilities||[]};
 }
+const ABIL_IMMUNE={"부유":"Ground","흙먹기":"Ground","저수":"Water","마중물":"Water","건조피부":"Water","축전":"Electric","피뢰침":"Electric","타오르는불꽃":"Fire","초식":"Grass"};
+const ABIL_HALF={"두꺼운지방":["Fire","Ice"],"두꺼운 지방":["Fire","Ice"]};
+function abilNote(ab){ if(!ab)return ""; if(ABIL_IMMUNE[ab])return KO[ABIL_IMMUNE[ab]]+" 무효"; if(ABIL_HALF[ab])return ABIL_HALF[ab].map(t=>KO[t]).join("·")+" 반감"; return ""; }
+function typeMultOn(atkType,defTypes,ability){ let v=eff(atkType,defTypes); if(ability){ if(ABIL_IMMUNE[ability]===atkType) return 0; if(ABIL_HALF[ability]&&ABIL_HALF[ability].includes(atkType)) v*=0.5; } return v; }
+function bestAtkOn(atkT,defTypes,ability){ return Math.max(...atkT.map(a=>typeMultOn(a,defTypes,ability))); }
 const SPRITE=n=>`https://s-stats-platform-cdn.op.gg/pokemon/images/pokemon/${n}.png`;
 const SEED=[["이상해꽃",["Grass","Poison"],80],["리자몽",["Fire","Flying"],100],["거북왕",["Water"],78],["피카츄",["Electric"],90]];
 function seed(){ SEED.forEach(m=>addMon(m[0],m[1],m[2])); }
@@ -178,8 +183,8 @@ if(!load()){ seed(); save(); }
 try{ const b=localStorage.getItem(BKEY); if(b) BUILDS=JSON.parse(b); }catch(e){}
 try{ const b=localStorage.getItem(FBKEY); if(b) FOEBUILDS=JSON.parse(b); }catch(e){}
 function saveB(store){ try{ localStorage.setItem(store===FOEBUILDS?FBKEY:BKEY,JSON.stringify(store)); }catch(e){} }
-function getB(store,name){ return store[name]||{item:"",moves:["","","",""],spd:1}; }
-function setB(store,name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m) && (!b.spd||b.spd<=1)){ delete store[name]; } else { store[name]={item:b.item,moves:b.moves,spd:b.spd||1}; } saveB(store); }
+function getB(store,name){ return store[name]||{item:"",moves:["","","",""],spd:1,ability:""}; }
+function setB(store,name,b){ if(!name)return; if(!b.item && b.moves.every(m=>!m) && (!b.spd||b.spd<=1) && !b.ability){ delete store[name]; } else { store[name]={item:b.item,moves:b.moves,spd:b.spd||1,ability:b.ability||""}; } saveB(store); }
 function scarf(item){ return item && item.indexOf("스카프")>=0; }
 function effSpe(m,build){ if(!m.spe)return null; let mult=1; if(build){ if(scarf(build.item)) mult*=1.5; if(build.spd&&build.spd>1) mult*=build.spd; } return Math.round(m.spe*mult); }
 function atkTypes(m){ const mv=(m.build&&m.build.moves||[]).filter(Boolean); return mv.length?[...new Set(mv)]:m.types; }
@@ -190,13 +195,13 @@ function refreshDex(){ const names=Object.keys(DEX); document.getElementById("de
 function parseHTML(html){
   let n=0;
   try{ const doc=new DOMParser().parseFromString(html,"text/html"); const anchors=doc.querySelectorAll('a[href*="/pokedex/"]'); if(!anchors.length) return 0;
-    anchors.forEach(a=>{ const nameEl=a.querySelector('.truncate'); const name=nameEl?nameEl.textContent.trim():""; const types=[...a.querySelectorAll('span[style*="background-color"]')].map(s=>s.textContent.trim()).map(t=>TMAP[t]).filter(Boolean); let spe=null; const host=a.closest('[class*="min-w-"]'); if(host){ const cells=[...host.querySelectorAll('div')].filter(d=>d.className&&d.className.includes('w-[46px]')); if(cells.length>=6) spe=parseInt(cells[5].textContent.trim())||null; } let img=null; const im=[...a.querySelectorAll('img')].map(x=>x.getAttribute('src')||"").find(s=>/\/images\/pokemon\/\d+\.png/.test(s)); if(im){ const mm=im.match(/\/images\/pokemon\/(\d+)\.png/); if(mm) img=SPRITE(mm[1]); } if(name&&types.length){ addMon(name,types,spe,img); n++; } });
+    anchors.forEach(a=>{ const nameEl=a.querySelector('.truncate'); const name=nameEl?nameEl.textContent.trim():""; const types=[...a.querySelectorAll('span[style*="background-color"]')].map(s=>s.textContent.trim()).map(t=>TMAP[t]).filter(Boolean); let spe=null; const host=a.closest('[class*="min-w-"]'); if(host){ const cells=[...host.querySelectorAll('div')].filter(d=>d.className&&d.className.includes('w-[46px]')); if(cells.length>=6) spe=parseInt(cells[5].textContent.trim())||null; } let img=null; const im=[...a.querySelectorAll('img')].map(x=>x.getAttribute('src')||"").find(s=>/\/images\/pokemon\/\d+\.png/.test(s)); if(im){ const mm=im.match(/\/images\/pokemon\/(\d+)\.png/); if(mm) img=SPRITE(mm[1]); } let abilities=[]; if(host){ abilities=[...host.querySelectorAll('a[href*="/abilities/"]')].map(x=>x.textContent.trim()).filter(Boolean); } if(name&&types.length){ addMon(name,types,spe,img,abilities); n++; } });
   }catch(e){}
   return n;
 }
 function parseText(txt){
   const lines=txt.split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length); const isInt=s=>/^\d+$/.test(s); let n=0;
-  for(let i=0;i<lines.length;i++){ if(/^#\d+/.test(lines[i])){ const dexnum=lines[i].match(/^#(\d+)/)[1]; let j=i-1; const types=[]; while(j>=0 && TMAP[lines[j]]){ types.unshift(TMAP[lines[j]]); j--; } const name=j>=0?lines[j]:""; let k=i+1; const stats=[]; while(k<lines.length){ if(isInt(lines[k])){ while(k<lines.length && isInt(lines[k])){ stats.push(parseInt(lines[k])); k++; } break; } k++; } const spe=stats.length>=6?stats[5]:null; const img=SPRITE(parseInt(dexnum,10)); if(name&&types.length){ addMon(name,types,spe,img); n++; } } }
+  for(let i=0;i<lines.length;i++){ if(/^#\d+/.test(lines[i])){ const dexnum=lines[i].match(/^#(\d+)/)[1]; let j=i-1; const types=[]; while(j>=0 && TMAP[lines[j]]){ types.unshift(TMAP[lines[j]]); j--; } const name=j>=0?lines[j]:""; let k=i+1; const stats=[]; while(k<lines.length){ if(isInt(lines[k])){ while(k<lines.length && isInt(lines[k])){ stats.push(parseInt(lines[k])); k++; } break; } k++; } const spe=stats.length>=6?stats[5]:null; const img=SPRITE(parseInt(dexnum,10)); const abilities=[]; let kk=k; while(kk<lines.length && !isInt(lines[kk])){ const L=lines[kk]; if(!TMAP[L] && !/x$/.test(L) && !/^#/.test(L)) abilities.push(L); kk++; } if(name&&types.length){ addMon(name,types,spe,img,abilities); n++; } } }
   return n;
 }
 document.getElementById("addbtn").addEventListener("click",()=>{ const raw=document.getElementById("paste").value; const before=Object.keys(DEX).length; let n=parseHTML(raw); if(n===0) n=parseText(raw); save(); refreshDex(); document.getElementById("paste").value=""; document.getElementById("addmsg").textContent=n?`인식 ${n} · 신규 ${Object.keys(DEX).length-before} · 총 ${Object.keys(DEX).length}`:"인식된 포켓몬이 없어요"; });
@@ -214,7 +219,7 @@ document.getElementById("manbtn").addEventListener("click",()=>{ const name=docu
 
 document.getElementById("exportBtn").addEventListener("click",()=>{ const json=JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS}); document.getElementById("ioBox").value=json; if(navigator.clipboard) navigator.clipboard.writeText(json).catch(()=>{}); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${Object.keys(DEX).length}마리 + 빌드 ${Object.keys(BUILDS).length} 복사됨`; });
 document.getElementById("downloadBtn").addEventListener("click",()=>{ const blob=new Blob([JSON.stringify({dex:DEX,builds:BUILDS,foebuilds:FOEBUILDS})],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="pokedex.json"; a.click(); });
-function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null, foebuilds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; foebuilds=obj.foebuilds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null,img:m.img||null}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveB(BUILDS); } if(foebuilds){ Object.keys(foebuilds).forEach(k=>FOEBUILDS[k]=foebuilds[k]); saveB(FOEBUILDS); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
+function doImport(json){ try{ const obj=JSON.parse(json); let dex=obj, builds=null, foebuilds=null; if(obj.dex){ dex=obj.dex; builds=obj.builds||{}; foebuilds=obj.foebuilds||{}; } let n=0; Object.values(dex).forEach(m=>{ if(m&&m.name&&m.types){ DEX[m.name]={name:m.name,base:m.base||m.name,types:m.types,spe:m.spe||null,img:m.img||null,abilities:m.abilities||[]}; n++; } }); if(builds){ Object.keys(builds).forEach(k=>BUILDS[k]=builds[k]); saveB(BUILDS); } if(foebuilds){ Object.keys(foebuilds).forEach(k=>FOEBUILDS[k]=foebuilds[k]); saveB(FOEBUILDS); } save(); refreshDex(); rebuildTeams(); document.getElementById("ioMsg").style.color="var(--success)"; document.getElementById("ioMsg").textContent=`${n}마리 가져옴 · 총 ${Object.keys(DEX).length}`; }catch(e){ document.getElementById("ioMsg").style.color="var(--danger)"; document.getElementById("ioMsg").textContent="JSON 형식이 올바르지 않아요"; } }
 document.getElementById("importBtn").addEventListener("click",()=>doImport(document.getElementById("ioBox").value));
 document.getElementById("fileIn").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>doImport(r.result); r.readAsText(f); });
 
@@ -222,22 +227,23 @@ function curVals(id){ return [...document.querySelectorAll(`#${id} .slot input`)
 function teamSlots(container,presets,store){
   container.innerHTML="";
   for(let i=0;i<6;i++){
-    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
+    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><select class="ab" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
     slot.querySelector('.pk').addEventListener('click',()=>openPicker(nameInput));
-    const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), mvs=[...panel.querySelectorAll('.mv')];
+    const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), abSel=panel.querySelector('.ab'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
     spSel.innerHTML=SPDOPTS;
     function markToggle(){ toggle.style.color=store[nameInput.value.trim()]?'var(--accent)':'var(--muted)'; }
-    function loadBuild(){ const b=getB(store,nameInput.value.trim()); itemInput.value=b.item||""; spSel.value=b.spd||1; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
-    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setB(store,n,{item:itemInput.value.trim(),spd:parseFloat(spSel.value)||1,moves:mvs.map(s=>s.value)}); markToggle(); }
+    function loadBuild(){ const nm=nameInput.value.trim(); const b=getB(store,nm); itemInput.value=b.item||""; spSel.value=b.spd||1; const abs=(DEX[nm]&&DEX[nm].abilities)||[]; abSel.innerHTML='<option value="">특성 (모름)</option>'+abs.map(a=>{const nt=abilNote(a); return `<option value="${a}">${a}${nt?' — '+nt:''}</option>`;}).join(''); abSel.value=b.ability||""; mvs.forEach((s,i)=>s.value=(b.moves&&b.moves[i])||""); }
+    function saveCur(){ const n=nameInput.value.trim(); if(!n)return; setB(store,n,{item:itemInput.value.trim(),spd:parseFloat(spSel.value)||1,ability:abSel.value,moves:mvs.map(s=>s.value)}); markToggle(); }
     toggle.addEventListener('click',()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) loadBuild(); });
     nameInput.addEventListener('change',()=>{ if(!panel.hidden) loadBuild(); markToggle(); });
     nameInput.addEventListener('input',markToggle);
     itemInput.addEventListener('change',saveCur);
     spSel.addEventListener('change',saveCur);
+    abSel.addEventListener('change',saveCur);
     mvs.forEach(s=>s.addEventListener('change',saveCur));
     markToggle();
   });
@@ -279,25 +285,30 @@ function monLabel(m){
   if(es) s+=`<span style="font-size:10px; color:${boosted?'var(--accent)':'var(--muted)'};">S${es}${boosted?'↑':''}</span>`;
   if(item) s+=`<span class="chip">${item}</span>`;
   if(spdBuff) s+=`<span class="chip" style="background:var(--accent-bg); color:var(--accent);">×${m.build.spd} 스피드</span>`;
+  const ab=m.build&&m.build.ability, abn=ab?abilNote(ab):"";
+  if(abn) s+=`<span class="chip" style="background:var(--accent-bg); color:var(--accent);" title="${abn}">${ab}</span>`;
   if(mv.length) s+=`<span style="display:inline-flex; gap:2px; margin-left:2px;">${mv.map(t=>`<span title="${KO[t]}" style="width:9px; height:9px; border-radius:2px; background:${COL[t]};"></span>`).join("")}</span>`;
   s+=`</span>`; return s;
 }
 function combos(a){ const r=[]; for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)for(let k=j+1;k<a.length;k++)r.push([a[i],a[j],a[k]]); return r; }
 function evalCombo(sq,foes){
   let cov=[],miss=[],quad=0,fast=0,risk=0,rd=[];
-  foes.forEach(f=>{ const fs=effSpe(f,f.build)||f.spe; let best=0,fk=false; sq.forEach(m=>{ const e=bestAtk(atkTypes(m),f.types); if(e>best)best=e; const es=effSpe(m,m.build); if(e>=2&&es&&fs&&es>fs)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
-  sq.forEach(m=>{ let h=0; foes.forEach(f=>{ if(bestAtk(atkTypes(f),m.types)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
+  foes.forEach(f=>{ const fs=effSpe(f,f.build)||f.spe, fab=f.build&&f.build.ability; let best=0,fk=false; sq.forEach(m=>{ const e=bestAtkOn(atkTypes(m),f.types,fab); if(e>best)best=e; const es=effSpe(m,m.build); if(e>=2&&es&&fs&&es>fs)fk=true; }); if(best>=2){ cov.push(f); if(best>=4)quad++; if(fk)fast++; } else miss.push(f); });
+  sq.forEach(m=>{ let h=0; const mab=m.build&&m.build.ability; foes.forEach(f=>{ if(bestAtkOn(atkTypes(f),m.types,mab)>=2){h++;risk++;} }); if(h>=Math.ceil(foes.length/2))rd.push({m,h}); });
   return {sq,cov,miss,quad,fast,risk,rd,score:cov.length*100+fast*10+quad*4-risk*6};
 }
 function nameTypes(m){ return `<span style="font-weight:500;">${m.name}</span> ${m.types.map(badge).join("")}`; }
 function comboDetail(sq,foes){
   let h='<div style="font-size:12px; margin-bottom:6px; color:var(--muted);">상대별 처리</div><table style="width:100%; font-size:12px; border-collapse:collapse;">';
   foes.forEach(f=>{
+    const fab=f.build&&f.build.ability;
+    const weak=Object.values(TMAP).filter(t=>typeMultOn(t,f.types,fab)>=2);
     let best=null;
-    sq.forEach(m=>{ const es=effSpe(m,m.build)||m.spe||0; atkTypes(m).forEach(t=>{ const e=eff(t,f.types); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
+    sq.forEach(m=>{ const es=effSpe(m,m.build)||m.spe||0; atkTypes(m).forEach(t=>{ const e=typeMultOn(t,f.types,fab); if(!best||e>best.e||(e===best.e&&es>best.es)) best={m,t,e,es}; }); });
     const fs=effSpe(f,f.build)||f.spe; const cov=best.e>=2, fast=(best.es&&fs)?(best.es>fs):null;
     const fastTxt=fast===null?'':(fast?'<span style="color:var(--accent);"> 선공</span>':'<span style="color:var(--muted);"> 후공</span>');
-    h+=`<tr><td>${monLabel(f)}</td><td style="text-align:right; white-space:nowrap;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
+    const weakStr=weak.length?weak.map(t=>`<span class="badge" style="background:${COL[t]}; padding:1px 6px; font-size:10px;">${KO[t]}</span>`).join(" "):'<span style="color:var(--muted); font-size:11px;">약점 없음</span>';
+    h+=`<tr><td style="padding:5px 0; vertical-align:top;">${monLabel(f)}<div style="margin-top:3px; display:flex; gap:3px; flex-wrap:wrap; align-items:center;"><span style="font-size:10px; color:var(--muted);">약점</span>${weakStr}</div></td><td style="text-align:right; white-space:nowrap; vertical-align:top; padding:5px 0;">${cov?`${best.m.name} <b style="color:${COL[best.t]};">${KO[best.t]}</b> ×${fmtMult(best.e)}${fastTxt}`:`<span style="color:var(--danger);">커버 못함 ×${fmtMult(best.e)}</span>`}</td></tr>`;
   });
   h+='</table>';
   return h;
