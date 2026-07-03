@@ -33,5 +33,6 @@ class CalcActivity : Activity() {
             loadUrl("file:///android_asset/index.html")
         }
         setContentView(web)
+        web.requestFocus(android.view.View.FOCUS_DOWN)
     }
 }

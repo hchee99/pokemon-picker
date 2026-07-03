@@ -380,7 +380,10 @@ class OverlayService : Service() {
     private fun overlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
         w, h,
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+        // NOT_FOCUSABLE: 오버레이가 포커스를 뺏으면 뒤 화면(게임/계산기)이 키보드를 못 씀.
+        // 터치·버튼은 포커스 없이도 동작한다.
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
         PixelFormat.TRANSLUCENT
     )
 
