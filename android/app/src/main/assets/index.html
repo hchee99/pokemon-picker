@@ -236,7 +236,7 @@ function teamSlots(container,presets,store){
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
-    const pin=slot.querySelector('.pin'); if(pin) pin.addEventListener('click',()=>slot.classList.toggle('pinned'));
+    const pin=slot.querySelector('.pin'); if(pin) pin.addEventListener('click',()=>{ slot.classList.toggle('pinned'); saveMyTeam(); });
     slot.querySelector('.pk').addEventListener('click',()=>openPicker(nameInput));
     const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), abSel=panel.querySelector('.ab'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
@@ -255,7 +255,22 @@ function teamSlots(container,presets,store){
   });
 }
 const minePreset=["리자몽","거북왕","피카츄","","",""], foePreset=["이상해꽃","","","","",""];
-function rebuildTeams(){ const mv=curVals("mine"), fv=curVals("foe"); teamSlots(document.getElementById("mine"), mv.length?mv:minePreset, BUILDS); teamSlots(document.getElementById("foe"), fv.length?fv:foePreset, FOEBUILDS); }
+function rebuildTeams(){ const mv=curVals("mine"), fv=curVals("foe"); teamSlots(document.getElementById("mine"), mv.length?mv:minePreset, BUILDS); teamSlots(document.getElementById("foe"), fv.length?fv:foePreset, FOEBUILDS); restorePins(); }
+
+// 내 팀(이름+📌고정) 자동 저장/복원: 페이지를 새로 열어도 유지
+const TKEY="pkmn_myteam_v1";
+function saveMyTeam(){
+  const rows=[...document.querySelectorAll('#mine .slot')].map(s=>({n:(s.querySelector('.tn')||{}).value||"", p:s.classList.contains('pinned')}));
+  try{ localStorage.setItem(TKEY, JSON.stringify(rows)); }catch(e){}
+}
+function loadMyTeam(){ try{ const s=localStorage.getItem(TKEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+function restorePins(){
+  const saved=loadMyTeam(); if(!saved)return;
+  [...document.querySelectorAll('#mine .slot')].forEach((s,i)=>{
+    const cur=(s.querySelector('.tn')||{}).value||"";
+    if(saved[i] && saved[i].p && saved[i].n===cur) s.classList.add('pinned');
+  });
+}
 
 function badge(t){ return `<span class="badge" style="background:${COL[t]}">${KO[t]}</span>`; }
 function readTeam(id,store){ return [...document.querySelectorAll(`#${id} .tn`)].map(i=>{ const m=DEX[i.value.trim()]; if(!m)return null; return {...m, build:getB(store,i.value.trim())}; }).filter(Boolean); }
@@ -384,7 +399,7 @@ try{ const p=localStorage.getItem(PKEY); if(p) PRESETS=JSON.parse(p); }catch(e){
 function savePresets(){ try{ localStorage.setItem(PKEY,JSON.stringify(PRESETS)); }catch(e){} }
 function refreshPresets(){ const sel=document.getElementById("presetSel"); const names=Object.keys(PRESETS); sel.innerHTML=names.length?names.map(n=>`<option value="${n}">${n}</option>`).join(""):'<option value="">저장된 프리셋 없음</option>'; }
 document.getElementById("savePreset").addEventListener("click",()=>{ const nm=document.getElementById("presetName").value.trim(); if(!nm){ alert("프리셋 이름을 입력하세요"); return; } PRESETS[nm]=curVals("mine"); savePresets(); refreshPresets(); document.getElementById("presetSel").value=nm; document.getElementById("presetName").value=""; });
-document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; teamSlots(document.getElementById("mine"),PRESETS[nm],BUILDS); run(); });
+document.getElementById("loadPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; teamSlots(document.getElementById("mine"),PRESETS[nm],BUILDS); saveMyTeam(); run(); });
 document.getElementById("delPreset").addEventListener("click",()=>{ const nm=document.getElementById("presetSel").value; if(!nm||!PRESETS[nm])return; if(!confirm(`'${nm}' 프리셋을 삭제할까요?`))return; delete PRESETS[nm]; savePresets(); refreshPresets(); });
 
 document.getElementById("calcT1").innerHTML=Object.keys(TMAP).map(k=>`<option value="${TMAP[k]}">${k}</option>`).join("");
@@ -407,8 +422,14 @@ calcTypes();
 document.getElementById("go").addEventListener("click",run);
 refreshDex();
 refreshPresets();
-teamSlots(document.getElementById("mine"),minePreset,BUILDS);
+// 저장된 내 팀이 있으면 그걸로 시작 (없으면 예시팀)
+const savedTeam=loadMyTeam();
+teamSlots(document.getElementById("mine"), savedTeam?savedTeam.map(x=>x.n):minePreset, BUILDS);
+restorePins();
 teamSlots(document.getElementById("foe"),foePreset,FOEBUILDS);
+// 내 팀 입력이 바뀔 때마다 자동 저장
+document.getElementById("mine").addEventListener("change",e=>{ if(e.target.classList&&e.target.classList.contains("tn")) saveMyTeam(); });
+document.getElementById("mine").addEventListener("input",e=>{ if(e.target.classList&&e.target.classList.contains("tn")) saveMyTeam(); });
 run();
 </script>
 </body>
