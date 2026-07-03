@@ -3,7 +3,7 @@ import cv2, numpy as np, os, sys
 import type_icons as t
 HERE = os.path.dirname(os.path.abspath(__file__))
 shots = sys.argv[1:] or ["shot.png.jpg", "shot2.png.jpg", "shot3.png.jpg", "shot4.png.jpg", "shot5.png.jpg"]
-CW, CH = 120, 60
+CW, CH = 220, 110
 grid = np.full((CH*len(shots), CW*6, 3), 255, np.uint8)
 for r, f in enumerate(shots):
     s = cv2.imread(os.path.join(HERE, f))
