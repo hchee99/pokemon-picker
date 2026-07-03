@@ -60,6 +60,17 @@ class MainActivity : Activity() {
         root.addView(bigButton("계산기 열기 (내 팀·데이터 설정)") {
             startActivity(Intent(this, CalcActivity::class.java))
         })
+        root.addView(bigButton("문제 로그 공유 (카톡으로 보내기)") {
+            val text = AppLog.read().takeLast(12000)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, "[포켓선발도우미 로그]\n$text")
+            }
+            startActivity(Intent.createChooser(send, "로그 보내기"))
+        })
+        root.addView(bigButton("로그 지우기") {
+            AppLog.clear(); toast("로그 초기화됨")
+        })
 
         val scroll = ScrollView(this)
         scroll.addView(root)
@@ -77,6 +88,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_CAPTURE) return
+        AppLog.log("캡처 동의 결과: resultCode=$resultCode data=${data != null}")
         val svc = Intent(this, OverlayService::class.java)
         if (resultCode == RESULT_OK && data != null) {
             svc.putExtra("code", resultCode)

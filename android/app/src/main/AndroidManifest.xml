@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".App"
         android:label="포켓 선발 도우미"
         android:icon="@android:drawable/sym_def_app_icon"
         android:allowBackup="false">
