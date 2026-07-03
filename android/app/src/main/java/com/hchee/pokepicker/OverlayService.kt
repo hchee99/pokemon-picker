@@ -13,12 +13,17 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
+import android.media.ImageReader
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -51,6 +56,8 @@ class OverlayService : Service() {
     private var lastResults: List<Recognizer.SlotResult> = emptyList()
     private val selected = HashMap<Int, String>()
     private val main = Handler(Looper.getMainLooper())
+    private var projection: MediaProjection? = null
+    private var capturing = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -63,27 +70,103 @@ class OverlayService : Service() {
         watchScreenshots()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val code = intent?.getIntExtra("code", 0) ?: 0
+        @Suppress("DEPRECATION")
+        val data: Intent? = intent?.getParcelableExtra("data")
+        if (code != 0 && data != null && projection == null) {
+            // API 34: 프로젝션 얻기 전에 mediaProjection 타입으로 포그라운드 재선언
+            startAsForeground(withProjection = true)
+            val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            projection = mpm.getMediaProjection(code, data)
+            projection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() { projection = null }
+            }, main)
+            bubble?.text = "⚡"
+            Toast.makeText(this, "⚡를 누르면 화면을 캡처해 인식해요 (저장 없음)", Toast.LENGTH_SHORT).show()
+        }
+        return START_STICKY
+    }
+
     override fun onDestroy() {
         observer?.let { contentResolver.unregisterContentObserver(it) }
+        projection?.stop()
         listOf(bubble, panel, webPanel).forEach { v -> v?.let { runCatching { wm.removeView(it) } } }
         super.onDestroy()
     }
 
+    // ---------- 저장 없는 화면 캡처 (MediaProjection) ----------
+    private fun captureNow() {
+        val mp = projection ?: return
+        if (capturing) return
+        capturing = true
+        val dm = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getRealMetrics(dm)
+        val w = dm.widthPixels; val h = dm.heightPixels
+        val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+        var vd: android.hardware.display.VirtualDisplay? = null
+        var done = false
+        reader.setOnImageAvailableListener({ r ->
+            val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
+            if (done) { img.close(); return@setOnImageAvailableListener }
+            done = true
+            try {
+                val plane = img.planes[0]
+                val rowStride = plane.rowStride; val pixelStride = plane.pixelStride
+                val bmpW = rowStride / pixelStride
+                val full = Bitmap.createBitmap(bmpW, h, Bitmap.Config.ARGB_8888)
+                full.copyPixelsFromBuffer(plane.buffer)
+                val shot = if (bmpW != w) Bitmap.createBitmap(full, 0, 0, w, h) else full
+                img.close()
+                main.post { runCatching { vd?.release() }; reader.close(); capturing = false }
+                Thread { handleBitmap(shot) }.start()
+            } catch (e: Exception) {
+                img.close()
+                main.post { runCatching { vd?.release() }; reader.close(); capturing = false }
+            }
+        }, main)
+        vd = mp.createVirtualDisplay(
+            "pokecap", w, h, dm.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, main
+        )
+        // 3초 안에 프레임이 안 오면 정리
+        main.postDelayed({
+            if (!done) { runCatching { vd?.release() }; runCatching { reader.close() }; capturing = false }
+        }, 3000)
+    }
+
+    private fun handleBitmap(bmp: Bitmap) {
+        val results = Recognizer.recognize(bmp)
+        main.post {
+            if (results.size < 3) {
+                Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
+            } else {
+                lastResults = results
+                selected.clear()
+                results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
+                showPanel()
+            }
+        }
+    }
+
     // ---------- 포그라운드 알림 ----------
-    private fun startAsForeground() {
+    private fun startAsForeground(withProjection: Boolean = false) {
         val chId = "watch"
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(chId, "스크린샷 감시", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(chId, "화면 인식", NotificationManager.IMPORTANCE_LOW)
         )
         val n: Notification = Notification.Builder(this, chId)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("포켓 선발 도우미 실행 중")
-            .setContentText("팀 프리뷰 스크린샷을 찍으면 자동 인식해요")
+            .setContentText(if (withProjection) "⚡ 버튼을 누르면 캡처·인식 (저장 없음)" else "팀 프리뷰 스크린샷을 찍으면 자동 인식해요")
             .build()
-        if (Build.VERSION.SDK_INT >= 34)
-            startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        else startForeground(1, n)
+        if (Build.VERSION.SDK_INT >= 34) {
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            if (withProjection) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            startForeground(1, n, type)
+        } else startForeground(1, n)
     }
 
     // ---------- 스크린샷 감시 ----------
@@ -126,17 +209,7 @@ class OverlayService : Service() {
         val bmp: Bitmap = try {
             contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return
         } catch (e: Exception) { return }
-        val results = try { Recognizer.recognize(bmp) } finally { }
-        main.post {
-            if (results.size < 3) {
-                Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
-            } else {
-                lastResults = results
-                selected.clear()
-                results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
-                showPanel()
-            }
-        }
+        handleBitmap(bmp)
     }
 
     // ---------- 작은 플로팅 버블 ----------
@@ -162,9 +235,12 @@ class OverlayService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        if (panel != null) hidePanel()
-                        else if (lastResults.isNotEmpty()) showPanel()
-                        else Toast.makeText(this, "팀 프리뷰에서 스크린샷을 찍으면 자동 인식해요", Toast.LENGTH_SHORT).show()
+                        when {
+                            panel != null -> hidePanel()
+                            projection != null -> captureNow()   // 저장 없이 즉시 캡처·인식
+                            lastResults.isNotEmpty() -> showPanel()
+                            else -> Toast.makeText(this, "팀 프리뷰에서 스크린샷을 찍으면 자동 인식해요", Toast.LENGTH_SHORT).show()
+                        }
                     }
                     true
                 }

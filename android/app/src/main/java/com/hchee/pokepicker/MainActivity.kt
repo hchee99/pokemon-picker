@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -48,11 +49,10 @@ class MainActivity : Activity() {
             else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
             requestPermissions(perms, 1)
         })
-        root.addView(bigButton("3. 감시 시작 ▶") {
+        root.addView(bigButton("3. 시작 ▶ (화면 캡처 허용창이 떠요)") {
             if (!Settings.canDrawOverlays(this)) { toast("먼저 1번 오버레이 권한을 허용해 주세요"); return@bigButton }
-            if (!hasMedia()) { toast("먼저 2번 사진 접근을 허용해 주세요"); return@bigButton }
-            startForegroundService(Intent(this, OverlayService::class.java))
-            toast("시작! 게임에서 팀 프리뷰 스크린샷을 찍어보세요")
+            val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE)
         })
         root.addView(bigButton("감시 중지 ■") {
             stopService(Intent(this, OverlayService::class.java))
@@ -70,8 +70,26 @@ class MainActivity : Activity() {
         super.onResume()
         val overlay = if (Settings.canDrawOverlays(this)) "✅" else "❌"
         val media = if (hasMedia()) "✅" else "❌"
-        status.text = "권한 상태:  오버레이 $overlay   사진 접근 $media"
+        status.text = "권한 상태:  오버레이 $overlay   사진 접근 $media\n" +
+            "시작하면 게임 위에 ⚡ 버튼이 떠요. 팀 프리뷰에서 ⚡를 누르면 저장 없이 화면을 캡처해 인식해요."
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_CAPTURE) return
+        val svc = Intent(this, OverlayService::class.java)
+        if (resultCode == RESULT_OK && data != null) {
+            svc.putExtra("code", resultCode)
+            svc.putExtra("data", data)
+            toast("시작! 게임에서 ⚡ 버튼을 누르면 캡처·인식해요 (파일 저장 없음)")
+        } else {
+            if (!hasMedia()) { toast("캡처 거부됨 — 2번 사진 접근이라도 허용해야 스샷 방식이 돼요"); return }
+            toast("캡처 거부됨 — 대신 스크린샷을 찍으면 인식하는 방식으로 시작해요")
+        }
+        startForegroundService(svc)
+    }
+
+    companion object { private const val REQ_CAPTURE = 42 }
 
     private fun hasMedia(): Boolean {
         val p = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES
