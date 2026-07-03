@@ -57,7 +57,9 @@ class OverlayService : Service() {
     private val selected = HashMap<Int, String>()
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
-    private var capturing = false
+    private var reader: ImageReader? = null
+    private var vdisp: android.hardware.display.VirtualDisplay? = null
+    @Volatile private var wantFrame = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,9 +87,15 @@ class OverlayService : Service() {
                 val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 projection = mpm.getMediaProjection(code, data)
                 projection?.registerCallback(object : MediaProjection.Callback() {
-                    override fun onStop() { AppLog.log("projection onStop"); projection = null }
+                    override fun onStop() {
+                        AppLog.log("projection onStop")
+                        projection = null
+                        runCatching { vdisp?.release() }; vdisp = null
+                        runCatching { reader?.close() }; reader = null
+                    }
                 }, main)
                 AppLog.log("프로젝션 획득 성공: ${projection != null}")
+                setupCaptureSession()   // 세션은 1번만 만들고 계속 유지 (안드로이드14 1회 제한 대응)
                 bubble?.text = "⚡"
                 Toast.makeText(this, "⚡를 누르면 화면을 캡처해 인식해요 (저장 없음)", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -99,56 +107,77 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         observer?.let { contentResolver.unregisterContentObserver(it) }
+        runCatching { vdisp?.release() }
+        runCatching { reader?.close() }
         projection?.stop()
         listOf(bubble, panel, webPanel).forEach { v -> v?.let { runCatching { wm.removeView(it) } } }
         super.onDestroy()
     }
 
-    // ---------- 저장 없는 화면 캡처 (MediaProjection) ----------
-    private fun captureNow() {
-        val mp = projection
-        if (mp == null) { AppLog.log("captureNow: projection 없음"); return }
-        if (capturing) { AppLog.log("captureNow: 이미 캡처중"); return }
-        capturing = true
-        bubble?.text = "⏳"
-        main.postDelayed({ bubble?.text = "⚡" }, 1500)
+    // ---------- 저장 없는 화면 캡처 (MediaProjection, 지속 세션) ----------
+    // 안드로이드14는 createVirtualDisplay를 프로젝션당 1번만 허용 → 세션을 계속 유지하고,
+    // 평소엔 프레임을 그냥 버리다가(wantFrame=false) ⚡ 탭 시 다음 프레임을 비트맵으로 변환.
+    private fun realMetrics(): DisplayMetrics {
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(dm)
-        val w = dm.widthPixels; val h = dm.heightPixels
-        AppLog.log("captureNow 시작: ${w}x${h}")
-        val reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        var vd: android.hardware.display.VirtualDisplay? = null
-        var done = false
-        reader.setOnImageAvailableListener({ r ->
-            val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
-            if (done) { img.close(); return@setOnImageAvailableListener }
-            done = true
+        return dm
+    }
+
+    private fun newReader(w: Int, h: Int): ImageReader {
+        val r = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+        r.setOnImageAvailableListener({ rd ->
+            val img = rd.acquireLatestImage() ?: return@setOnImageAvailableListener
+            if (!wantFrame) { img.close(); return@setOnImageAvailableListener }  // 평소엔 버림(스톨 방지)
+            wantFrame = false
             try {
                 val plane = img.planes[0]
-                val rowStride = plane.rowStride; val pixelStride = plane.pixelStride
-                val bmpW = rowStride / pixelStride
-                val full = Bitmap.createBitmap(bmpW, h, Bitmap.Config.ARGB_8888)
+                val bmpW = plane.rowStride / plane.pixelStride
+                val full = Bitmap.createBitmap(bmpW, img.height, Bitmap.Config.ARGB_8888)
                 full.copyPixelsFromBuffer(plane.buffer)
-                val shot = if (bmpW != w) Bitmap.createBitmap(full, 0, 0, w, h) else full
+                val shot = if (bmpW != img.width) Bitmap.createBitmap(full, 0, 0, img.width, img.height) else full
                 img.close()
                 AppLog.log("프레임 수신: ${shot.width}x${shot.height}")
-                main.post { runCatching { vd?.release() }; reader.close(); capturing = false }
                 Thread { handleBitmap(shot) }.start()
             } catch (e: Exception) {
-                AppLog.log("프레임 처리 실패", e)
-                img.close()
-                main.post { runCatching { vd?.release() }; reader.close(); capturing = false }
+                AppLog.log("프레임 변환 실패", e)
+                runCatching { img.close() }
             }
         }, main)
-        vd = mp.createVirtualDisplay(
-            "pokecap", w, h, dm.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, main
+        return r
+    }
+
+    private fun setupCaptureSession() {
+        val mp = projection ?: return
+        val dm = realMetrics()
+        reader = newReader(dm.widthPixels, dm.heightPixels)
+        vdisp = mp.createVirtualDisplay(
+            "pokecap", dm.widthPixels, dm.heightPixels, dm.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader!!.surface, null, main
         )
-        // 3초 안에 프레임이 안 오면 정리
+        AppLog.log("캡처 세션 생성: ${dm.widthPixels}x${dm.heightPixels}")
+    }
+
+    private fun captureNow() {
+        val vd = vdisp
+        if (vd == null) { AppLog.log("captureNow: 세션 없음"); Toast.makeText(this, "캡처 세션이 없어요 — 앱에서 다시 '시작'해 주세요", Toast.LENGTH_SHORT).show(); return }
+        // 화면 회전 등으로 크기가 바뀌었으면 세션 재생성 없이 resize (1회 제한 회피)
+        val dm = realMetrics()
+        if (reader?.width != dm.widthPixels || reader?.height != dm.heightPixels) {
+            AppLog.log("해상도 변경 감지 → reader 교체 + resize (${dm.widthPixels}x${dm.heightPixels})")
+            val old = reader
+            reader = newReader(dm.widthPixels, dm.heightPixels)
+            vd.resize(dm.widthPixels, dm.heightPixels, dm.densityDpi)
+            vd.surface = reader!!.surface
+            runCatching { old?.close() }
+        }
+        bubble?.text = "⏳"
+        main.postDelayed({ bubble?.text = "⚡" }, 1500)
+        AppLog.log("captureNow: 다음 프레임 요청")
+        wantFrame = true
         main.postDelayed({
-            if (!done) { runCatching { vd?.release() }; runCatching { reader.close() }; capturing = false }
-        }, 3000)
+            if (wantFrame) { wantFrame = false; AppLog.log("프레임 타임아웃"); Toast.makeText(this, "캡처 실패 — 한 번 더 탭해 주세요", Toast.LENGTH_SHORT).show() }
+        }, 2500)
     }
 
     private fun handleBitmap(bmp: Bitmap) {
