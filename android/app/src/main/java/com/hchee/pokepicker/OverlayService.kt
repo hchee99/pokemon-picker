@@ -343,11 +343,12 @@ class OverlayService : Service() {
         })
         root.addView(btnRow)
 
+        // 왼쪽에 표시: 오른쪽의 상대 포켓몬을 보면서 후보를 탭할 수 있게
         val lp = overlayParams(
-            (disp.widthPixels * 0.46).toInt().coerceAtLeast(dp(320)),
+            (disp.widthPixels * 0.42).toInt().coerceAtLeast(dp(300)),
             WindowManager.LayoutParams.WRAP_CONTENT
         )
-        lp.gravity = Gravity.TOP or Gravity.END
+        lp.gravity = Gravity.TOP or Gravity.START
         lp.x = dp(8); lp.y = dp(40)
         wm.addView(root, lp)
         panel = root
@@ -399,8 +400,10 @@ class OverlayService : Service() {
             text = "닫기"
             setOnClickListener { hideWeb() }
         })
-        val lp = overlayParams((disp.widthPixels * 0.60).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
-        lp.gravity = Gravity.CENTER
+        // 오른쪽에 표시: 추천을 보면서 왼쪽 내 팀 목록에서 3마리를 탭할 수 있게
+        val lp = overlayParams((disp.widthPixels * 0.55).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
+        lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
+        lp.x = dp(8)
         wm.addView(root, lp)
         webPanel = root
     }
