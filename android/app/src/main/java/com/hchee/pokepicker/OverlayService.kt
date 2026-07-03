@@ -100,6 +100,8 @@ class OverlayService : Service() {
         val mp = projection ?: return
         if (capturing) return
         capturing = true
+        bubble?.text = "⏳"
+        main.postDelayed({ bubble?.text = "⚡" }, 1500)
         val dm = DisplayMetrics()
         @Suppress("DEPRECATION")
         wm.defaultDisplay.getRealMetrics(dm)
@@ -224,14 +226,21 @@ class OverlayService : Service() {
         val lp = overlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT)
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = dp(8); lp.y = dp(120)
-        var dx = 0f; var dy = 0f; var moved = false
+        var dx = 0f; var dy = 0f; var downX = 0f; var downY = 0f; var moved = false
+        val slop = dp(12)  // 이 이상 움직여야 드래그로 판정 (미세 떨림은 탭으로 인정)
         tv.setOnTouchListener { v, e ->
             when (e.action) {
-                MotionEvent.ACTION_DOWN -> { dx = e.rawX - lp.x; dy = e.rawY - lp.y; moved = false; true }
+                MotionEvent.ACTION_DOWN -> {
+                    dx = e.rawX - lp.x; dy = e.rawY - lp.y
+                    downX = e.rawX; downY = e.rawY; moved = false; true
+                }
                 MotionEvent.ACTION_MOVE -> {
-                    lp.x = (e.rawX - dx).toInt(); lp.y = (e.rawY - dy).toInt()
-                    if (kotlin.math.abs(e.rawX - dx - lp.x) > 6) moved = true
-                    wm.updateViewLayout(v, lp); moved = true; true
+                    if (kotlin.math.abs(e.rawX - downX) > slop || kotlin.math.abs(e.rawY - downY) > slop) {
+                        moved = true
+                        lp.x = (e.rawX - dx).toInt(); lp.y = (e.rawY - dy).toInt()
+                        wm.updateViewLayout(v, lp)
+                    }
+                    true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
