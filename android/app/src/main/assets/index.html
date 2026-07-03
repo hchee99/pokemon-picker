@@ -232,7 +232,7 @@ function teamSlots(container,presets,store){
   const isMine = store===BUILDS;
   const pinBtn = isMine ? `<button type="button" class="pin" title="필수 선발(고정) — 이 포켓몬을 반드시 넣은 3마리만 추천">📌</button>` : '';
   for(let i=0;i<6;i++){
-    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}">${pinBtn}<button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><select class="ab" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
+    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" autocomplete="off" placeholder="이름 검색" value="${presets[i]||''}">${pinBtn}<button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><select class="ab" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
@@ -283,6 +283,36 @@ document.getElementById("pkClose").addEventListener("click",closePicker);
 document.getElementById("picker").addEventListener("click",e=>{ if(e.target.id==="picker") closePicker(); });
 document.getElementById("pkGrid").addEventListener("click",e=>{ const t=e.target.closest(".pktile"); if(!t||!pickerTarget)return; pickerTarget.value=t.dataset.n; pickerTarget.dispatchEvent(new Event("input")); pickerTarget.dispatchEvent(new Event("change")); closePicker(); run(); });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape" && document.getElementById("picker").style.display==="flex") closePicker(); });
+
+// 커스텀 자동완성: 웹뷰의 반투명 datalist 팝업 대신 입력칸 아래 또렷한 드롭다운
+const AC=document.createElement("div");
+AC.style.cssText="position:absolute; z-index:999; background:var(--surface); border:0.5px solid var(--border); border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.3); max-height:230px; overflow:auto; display:none;";
+document.body.appendChild(AC);
+let acTarget=null;
+function showAC(input){
+  const q=input.value.trim();
+  const list=q?Object.keys(DEX).filter(n=>n.includes(q)).slice(0,8):[];
+  if(!list.length){ hideAC(); return; }
+  acTarget=input;
+  AC.innerHTML=list.map(n=>`<div class="aci" style="padding:9px 12px; font-size:13px; cursor:pointer; border-bottom:0.5px solid var(--border);">${n}</div>`).join("");
+  const r=input.getBoundingClientRect();
+  AC.style.left=(r.left+window.scrollX)+"px";
+  AC.style.top=(r.bottom+window.scrollY+2)+"px";
+  AC.style.width=r.width+"px";
+  AC.style.display="block";
+}
+function hideAC(){ AC.style.display="none"; acTarget=null; }
+AC.addEventListener("pointerdown",e=>{
+  const d=e.target.closest(".aci"); if(!d||!acTarget)return;
+  e.preventDefault();
+  acTarget.value=d.textContent;
+  acTarget.dispatchEvent(new Event("input",{bubbles:true}));
+  acTarget.dispatchEvent(new Event("change",{bubbles:true}));
+  hideAC();
+});
+document.addEventListener("input",e=>{ if(e.target.classList&&e.target.classList.contains("tn")) showAC(e.target); });
+document.addEventListener("focusout",e=>{ if(e.target===acTarget) setTimeout(hideAC,150); });
+window.addEventListener("scroll",()=>hideAC(),true);
 function monLabel(m){
   const item=m.build&&m.build.item, es=m.build?effSpe(m,m.build):m.spe, boosted=m.build&&((scarf(item))||(m.build.spd&&m.build.spd>1));
   const spdBuff=m.build&&m.build.spd&&m.build.spd>1;
