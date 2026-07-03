@@ -43,7 +43,10 @@
   .slot{ display:flex; align-items:center; gap:6px; margin-bottom:6px; }
   .slot span.idx{ font-size:11px; color:var(--muted); width:14px; }
   .slot input{ flex:1; min-width:0; }
-  .bt, .pk{ height:32px; width:34px; padding:0; flex-shrink:0; font-size:13px; }
+  .bt, .pk, .pin{ height:32px; width:34px; padding:0; flex-shrink:0; font-size:13px; }
+  .pin{ filter:grayscale(1) opacity(0.45); }
+  .slot.pinned .pin{ filter:none; }
+  .slot.pinned .tn{ border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-bg); }
   .pktile:hover{ border-color:var(--accent) !important; }
   .bp{ margin:-2px 0 8px 20px; padding:8px; background:var(--surface2); border-radius:var(--radius); }
   .bp .mvrow{ display:flex; gap:4px; margin-top:6px; }
@@ -226,11 +229,14 @@ document.getElementById("fileIn").addEventListener("change",e=>{ const f=e.targe
 function curVals(id){ return [...document.querySelectorAll(`#${id} .slot input`)].map(i=>i.value); }
 function teamSlots(container,presets,store){
   container.innerHTML="";
+  const isMine = store===BUILDS;
+  const pinBtn = isMine ? `<button type="button" class="pin" title="필수 선발(고정) — 이 포켓몬을 반드시 넣은 3마리만 추천">📌</button>` : '';
   for(let i=0;i<6;i++){
-    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}"><button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><select class="ab" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
+    container.insertAdjacentHTML("beforeend",`<div class="slot"><span class="idx">${i+1}</span><input class="tn" list="dexlist" placeholder="이름 검색" value="${presets[i]||''}">${pinBtn}<button type="button" class="pk" title="타입·이름으로 골라 넣기">🔍</button><button type="button" class="bt" title="도구·기술·버프 설정">⚙</button></div><div class="bp" hidden><input class="it" list="itemlist" placeholder="도구 (예: 구애스카프)"><select class="sp" style="margin-top:6px; width:100%;"></select><select class="ab" style="margin-top:6px; width:100%;"></select><div class="mvrow"><select class="mv"></select><select class="mv"></select><select class="mv"></select><select class="mv"></select></div></div>`);
   }
   [...container.querySelectorAll('.slot')].forEach(slot=>{
     const panel=slot.nextElementSibling, nameInput=slot.querySelector('.tn'), toggle=slot.querySelector('.bt');
+    const pin=slot.querySelector('.pin'); if(pin) pin.addEventListener('click',()=>slot.classList.toggle('pinned'));
     slot.querySelector('.pk').addEventListener('click',()=>openPicker(nameInput));
     const itemInput=panel.querySelector('.it'), spSel=panel.querySelector('.sp'), abSel=panel.querySelector('.ab'), mvs=[...panel.querySelectorAll('.mv')];
     mvs.forEach(s=>s.innerHTML=MVOPTS);
@@ -319,13 +325,15 @@ function run(){
   if(!foes.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">상대 팀을 1마리 이상 골라 주세요.</div>'; return; }
   const hasB=m=>m.build&&(m.build.item||m.build.moves.some(Boolean)||(m.build.spd&&m.build.spd>1));
   const anyBuild=mine.some(hasB)||foes.some(hasB);
-  const legal=combos(mine).filter(sq=>sq.filter(isMega).length<=1);
-  if(!legal.length){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">메가는 한 배틀에 1마리만 쓸 수 있어요. 팀에 메가가 아닌 포켓몬을 더 넣어야 3마리 조합이 나와요.</div>'; return; }
+  const pins=[...new Set([...document.querySelectorAll('#mine .slot.pinned .tn')].map(i=>i.value.trim()).filter(n=>DEX[n]))];
+  if(pins.length>3){ out.innerHTML='<div style="font-size:13px; color:var(--danger);">📌 고정은 3마리까지만 가능해요.</div>'; return; }
+  const legal=combos(mine).filter(sq=>sq.filter(isMega).length<=1 && pins.every(p=>sq.some(m=>m.name===p)));
+  if(!legal.length){ out.innerHTML=`<div style="font-size:13px; color:var(--danger);">조건에 맞는 3마리 조합이 없어요 ${pins.length?'(📌 고정 '+pins.length+'마리 + 메가 1제한 충돌)':'(메가 1마리 제한)'}. 고정을 줄이거나 팀을 바꿔보세요.</div>`; return; }
   const ranked=legal.map(sq=>evalCombo(sq,foes)).sort((a,b)=>b.score-a.score).slice(0,4);
-  let html=`<div style="font-size:13px; color:var(--muted); margin-bottom:10px;">상대 <b>${foes.length}마리</b> 기준 상위 추천 · <span style="color:var(--muted);">메가 1마리 제한 적용</span> ${anyBuild?'· <span style="color:var(--accent);">기술·도구 반영됨</span>':'· (기술 미설정 시 자속 기준)'}</div>`;
+  let html=`<div style="font-size:13px; color:var(--muted); margin-bottom:10px;">상대 <b>${foes.length}마리</b> 기준 상위 추천 · <span style="color:var(--muted);">메가 1마리 제한</span>${pins.length?' · <span style="color:var(--accent);">📌 필수: '+pins.join(', ')+'</span>':''} ${anyBuild?'· <span style="color:var(--accent);">기술·도구 반영됨</span>':'· (기술 미설정 시 자속 기준)'}</div>`;
   ranked.forEach((r,i)=>{ const top=i===0;
     html+=`<div class="card ${top?'top':''}">
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">${top?'<span class="pill" style="background:var(--accent-bg); color:var(--accent);">추천</span>':`<span style="font-size:12px; color:var(--muted);">${i+1}위</span>`}${r.sq.map(monLabel).join('<span style="color:var(--muted);">·</span>')}</div>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">${top?'<span class="pill" style="background:var(--accent-bg); color:var(--accent);">추천</span>':`<span style="font-size:12px; color:var(--muted);">${i+1}위</span>`}${r.sq.map(m=>(pins.includes(m.name)?'<span title="필수 선발">📌</span>':'')+monLabel(m)).join('<span style="color:var(--muted);">·</span>')}</div>
       <div class="row" style="margin-bottom:8px;">
         <span class="pill" style="background:var(--success-bg); color:var(--success);">커버 ${r.cov.length}/${foes.length}${r.quad?` · 4배 ${r.quad}`:''}</span>
         <span class="pill" style="background:var(--accent-bg); color:var(--accent);">선공 커버 ${r.fast}</span>
