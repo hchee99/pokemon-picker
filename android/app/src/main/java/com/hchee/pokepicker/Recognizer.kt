@@ -51,11 +51,16 @@ object Recognizer {
 
     // 연한 아이콘(얼음)은 화면 모드/밝기에 따라 기준색보다 밝게 캡처될 수 있어 보조색 추가.
     // 전기는 밝은 경기장에서 노랑이 연해져 '노란 벽' 제외색에 먹히는 것 보정.
+    // 격투는 실제 아이콘이 기준색보다 진한 주황(234,136,53)이고, 밝은 경기장에선 더
+    // 채도가 올라가 불꽃-격투 기준색 사이 갭에 떨어짐 → 진한 주황 변형으로 갭을 메움.
     private val TYPE_VARIANTS = listOf(
         "얼음" to intArrayOf(150, 220, 248),
         "얼음" to intArrayOf(170, 228, 250),
         "전기" to intArrayOf(234, 200, 88),
-        "전기" to intArrayOf(238, 208, 102)
+        "전기" to intArrayOf(238, 208, 102),
+        "격투" to intArrayOf(235, 136, 52),
+        "격투" to intArrayOf(240, 118, 42),
+        "격투" to intArrayOf(248, 100, 28)
     )
 
     private val NAMES = TYPE_RGB.keys.toList()
@@ -217,8 +222,8 @@ object Recognizer {
                 e[0]++; e[1] += r; e[2] += g; e[3] += b
             }
         }
-        // 영역에서 가장 많이 나온 색 4개의 실제 평균 RGB — 폰에서만 색이 어긋날 때 이 값으로 재보정
-        val topCols = hist.values.sortedByDescending { it[0] }.take(4)
+        // 영역에서 가장 많이 나온 색 8개의 실제 평균 RGB — 폰에서만 색이 어긋날 때 이 값으로 재보정
+        val topCols = hist.values.sortedByDescending { it[0] }.take(8)
             .joinToString(" ") { "(${it[1] / it[0]},${it[2] / it[0]},${it[3] / it[0]})x${it[0]}" }
         AppLog.log("  $tag 주요색: $topCols")
         return counts
