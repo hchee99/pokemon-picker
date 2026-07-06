@@ -451,10 +451,16 @@ class OverlayService : Service() {
         web.layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, (disp.heightPixels * 0.78).toInt()
         )
+        // 평소엔 포커스 불가(게임 키보드 보호)지만, 이 창을 만지는 동안엔 포커스를 줘서
+        // 입력칸 키보드와 드롭다운(특성/기술 선택)이 동작하게 함. 닫으면 원복.
+        web.setOnTouchListener { _, ev ->
+            if (ev.action == android.view.MotionEvent.ACTION_DOWN) setWebFocusable(true)
+            false
+        }
         root.addView(web)
         root.addView(Button(this).apply {
             text = "닫기"
-            setOnClickListener { hideWeb() }
+            setOnClickListener { setWebFocusable(false); hideWeb() }
         })
         // 왼쪽에 표시: 오른쪽 상대 팀 정보를 가리지 않게 (상대 인식창과 같은 쪽)
         val lp = overlayParams((disp.widthPixels * 0.55).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
@@ -462,6 +468,17 @@ class OverlayService : Service() {
         lp.x = dp(8)
         wm.addView(root, lp)
         webPanel = root
+    }
+
+    /** 추천 WebView 창의 포커스 가능 여부 전환 (입력할 때만 켜고 닫으면 끔) */
+    private fun setWebFocusable(on: Boolean) {
+        val panel = webPanel ?: return
+        val lp = panel.layoutParams as? WindowManager.LayoutParams ?: return
+        val focusable = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE == 0
+        if (focusable == on) return
+        lp.flags = if (on) lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        else lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        runCatching { wm.updateViewLayout(panel, lp) }
     }
 
     // ---------- 헬퍼 ----------
