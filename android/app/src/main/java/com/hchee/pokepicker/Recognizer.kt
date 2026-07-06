@@ -16,7 +16,8 @@ import android.graphics.Color
  */
 object Recognizer {
 
-    data class SlotResult(val types: List<String>, val candidates: List<String>)
+    // topCount: 1위 타입의 픽셀 수 — 클수록 아이콘이 깨끗하게 보인 프레임 (병합 우선순위용)
+    data class SlotResult(val types: List<String>, val candidates: List<String>, val topCount: Int = 0)
 
     // 게임 스샷에서 보정한 실제 아이콘색 (prototype/type_icons.py 와 동일)
     private val TYPE_RGB = linkedMapOf(
@@ -99,7 +100,7 @@ object Recognizer {
             val iy1 = y0 + (bh * ICON_Y1).toInt()
             val ix0 = (shot.width * ICON_X0).toInt()
             val ix1 = (shot.width * ICON_X1).toInt()
-            val counts = classify(shot, ix0, iy0, ix1, iy1)
+            val counts = classify(shot, ix0, iy0, ix1, iy1, "칸(y$y0)")
             val sorted = counts.withIndex().sortedByDescending { it.value }
             val top = sorted.firstOrNull()?.value ?: 0
             AppLog.log("  칸(y$y0): " + sorted.take(3)
@@ -110,7 +111,7 @@ object Recognizer {
                 .filter { it.value >= maxOf(minPix, (0.35 * top).toInt()) }
                 .take(2)
                 .map { NAMES[it.index] }
-            SlotResult(chosen, if (chosen.isEmpty()) emptyList() else Dex.candidates(chosen.toSet()))
+            SlotResult(chosen, if (chosen.isEmpty()) emptyList() else Dex.candidates(chosen.toSet()), top)
         }
     }
 
@@ -126,7 +127,10 @@ object Recognizer {
                 x.types.size != y.types.size -> if (x.types.size > y.types.size) x else y
                 x.candidates.isEmpty() && y.candidates.isNotEmpty() -> y
                 y.candidates.isEmpty() && x.candidates.isNotEmpty() -> x
-                else -> y   // 동급이면 나중 프레임(애니메이션이 더 진정된 쪽)
+                // 타입이 서로 다르면 아이콘이 더 크게(깨끗하게) 보인 프레임을 채택
+                // (스프라이트 꼬리 등이 아이콘을 덮으면 픽셀 수가 확 줄어듦)
+                x.types != y.types -> if (x.topCount > y.topCount) x else y
+                else -> y
             }
         }
     }
@@ -168,12 +172,11 @@ object Recognizer {
     }
 
     /** 아이콘 영역 픽셀을 최근접 색으로 분류해 타입별 개수 반환 (제외색은 버림) */
-    private fun classify(shot: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int): IntArray {
+    private fun classify(shot: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int, tag: String): IntArray {
         val counts = IntArray(NT)
         val w = (x1 - x0).coerceAtLeast(1)
         val px = IntArray(w)
-        val ice = TYPE_RGB["얼음"]!!
-        var iceNear = 0; var iceR = 0L; var iceG = 0L; var iceB = 0L  // 얼음 진단용
+        val hist = HashMap<Int, IntArray>()  // 양자화색 -> [개수, R합, G합, B합] (원격 재보정용)
         for (y in y0 until y1.coerceAtMost(shot.height)) {
             shot.getPixels(px, 0, w, x0, y, w, 1)
             for (c in px) {
@@ -187,16 +190,14 @@ object Recognizer {
                 }
                 val ti = if (bestIdx >= 0) COL_TYPE[bestIdx] else -1
                 if (ti >= 0 && bestD < DIST2) counts[ti]++
-                val dr = r - ice[0]; val dg = g - ice[1]; val db = b - ice[2]
-                if (dr * dr + dg * dg + db * db < 90 * 90) {
-                    iceNear++; iceR += r; iceG += g; iceB += b
-                }
+                val e = hist.getOrPut((r shr 4 shl 8) or (g shr 4 shl 4) or (b shr 4)) { IntArray(4) }
+                e[0]++; e[1] += r; e[2] += g; e[3] += b
             }
         }
-        // 얼음 계열 픽셀이 꽤 있으면 실제 평균색을 로그로 남김 (재보정용)
-        if (iceNear > 60) {
-            AppLog.log("  얼음근처 ${iceNear}px 평균RGB=(${iceR / iceNear},${iceG / iceNear},${iceB / iceNear}) 얼음판정=${counts[NAMES.indexOf("얼음")]}px")
-        }
+        // 영역에서 가장 많이 나온 색 4개의 실제 평균 RGB — 폰에서만 색이 어긋날 때 이 값으로 재보정
+        val topCols = hist.values.sortedByDescending { it[0] }.take(4)
+            .joinToString(" ") { "(${it[1] / it[0]},${it[2] / it[0]},${it[3] / it[0]})x${it[0]}" }
+        AppLog.log("  $tag 주요색: $topCols")
         return counts
     }
 }

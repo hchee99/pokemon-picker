@@ -198,9 +198,9 @@ class OverlayService : Service() {
                     Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
                     return@post
                 }
-                // 1차 성공 → 0.5초 뒤 한 프레임 더 찍어 레이저/애니메이션 가림 보완
+                // 1차 성공 → 0.7초 뒤 한 프레임 더 찍어 레이저/스프라이트 애니메이션 가림 보완
                 firstResults = results
-                main.postDelayed({ if (firstResults != null) wantFrame = true }, 500)
+                main.postDelayed({ if (firstResults != null) wantFrame = true }, 700)
                 main.postDelayed({
                     firstResults?.let { f ->   // 2차가 안 오면 1차 결과로 진행
                         firstResults = null; wantFrame = false
