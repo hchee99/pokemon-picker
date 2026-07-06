@@ -71,6 +71,8 @@ class OverlayService : Service() {
         runCatching { Dex.load(this) }
             .onFailure { AppLog.log("Dex.load 실패", it) }
         AppLog.log("Dex 로드: ${Dex.mons.size}마리")
+        runCatching { Recognizer.loadTemplates(this) }
+            .onFailure { AppLog.log("글리프 템플릿 로드 실패", it) }
         runCatching { startAsForeground() }.onFailure { AppLog.log("startForeground 실패", it) }
         runCatching { showBubble() }.onFailure { AppLog.log("버블 표시 실패", it) }
         runCatching { watchScreenshots() }.onFailure { AppLog.log("스샷감시 등록 실패", it) }

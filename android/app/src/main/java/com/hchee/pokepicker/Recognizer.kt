@@ -1,7 +1,9 @@
 package com.hchee.pokepicker
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import org.json.JSONObject
 
 /**
  * 팀 프리뷰 스크린샷에서 상대 6마리의 타입 조합을 인식.
@@ -18,9 +20,10 @@ object Recognizer {
 
     // topCount: 1위 타입의 픽셀 수 — 클수록 아이콘이 깨끗하게 보인 프레임 (병합 우선순위용)
     // uncertain: 픽셀 수가 비정상적으로 적음 = 스프라이트가 아이콘을 덮은 의심 → 후보를 넓게 제시
+    // glyph: 심볼 모양 매칭으로 읽음 (색 분류보다 신뢰도 높음 — 병합 시 우선)
     data class SlotResult(
         val types: List<String>, val candidates: List<String>,
-        val topCount: Int = 0, val uncertain: Boolean = false
+        val topCount: Int = 0, val uncertain: Boolean = false, val glyph: Boolean = false
     )
 
     // 게임 스샷에서 보정한 실제 아이콘색 (prototype/type_icons.py 와 동일)
@@ -91,6 +94,72 @@ object Recognizer {
     private const val PANEL_H = 0.106                 // 화면높이 대비 칸 높이
     private val FIXED_TOPS = doubleArrayOf(0.142, 0.259, 0.376, 0.493, 0.610, 0.727)
 
+    // ---------- 심볼(글리프) 모양 매칭 ----------
+    // 색은 경기장 조명에 따라 변하지만 아이콘 안의 흰 심볼 모양은 항상 동일.
+    // 아이콘 네모 두 칸의 위치는 화면 비율로 고정 (prototype/glyph_match.py 측정, 데스크톱 54/54).
+    private const val LX0 = 0.8385; private const val LX1 = 0.8574   // 왼쪽 아이콘 x/W
+    private const val RX0 = 0.8603; private const val RX1 = 0.8792   // 오른쪽 아이콘 x/W (단일 타입은 여기만)
+    private const val GY0 = 0.125; private const val GY1 = 0.512     // 패널높이 대비 세로
+    private const val GRID = 20
+    private const val MIN_GLYPH = 25      // 흰 셀이 이보다 적으면 '아이콘 없음'
+    private const val GLYPH_THR = 0.45    // IoU 최고점이 이보다 낮으면 실패 → 색 분류로 폴백
+
+    private var templates: Map<String, BooleanArray> = emptyMap()   // 타입 -> 20x20 심볼 마스크
+
+    fun loadTemplates(ctx: Context) {
+        val root = JSONObject(ctx.assets.open("glyph_templates.json").bufferedReader().readText())
+        val out = HashMap<String, BooleanArray>()
+        for (key in root.keys()) {
+            val rows = root.getJSONArray(key)
+            val m = BooleanArray(GRID * GRID)
+            for (r in 0 until minOf(rows.length(), GRID)) {
+                val s = rows.getString(r)
+                for (c in 0 until minOf(s.length, GRID)) m[r * GRID + c] = s[c] == '1'
+            }
+            out[key] = m
+        }
+        templates = out
+        AppLog.log("글리프 템플릿 ${out.size}종 로드")
+    }
+
+    /** 아이콘 박스 -> 20x20 흰 심볼 마스크. 흰 픽셀이 거의 없으면 null(아이콘 없음). */
+    private fun glyphGrid(shot: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int): BooleanArray? {
+        val w = x1 - x0; val h = y1 - y0
+        if (w <= 0 || h <= 0) return null
+        val cnt = IntArray(GRID * GRID); val tot = IntArray(GRID * GRID)
+        val px = IntArray(w)
+        for (y in y0 until y1.coerceAtMost(shot.height)) {
+            shot.getPixels(px, 0, w, x0, y, w, 1)
+            val gy = ((y - y0) * GRID / h).coerceAtMost(GRID - 1)
+            for (i in 0 until w) {
+                val c = px[i]
+                val r = Color.red(c); val g = Color.green(c); val b = Color.blue(c)
+                val mx = maxOf(r, g, b); val mn = minOf(r, g, b)
+                val k = gy * GRID + (i * GRID / w).coerceAtMost(GRID - 1)
+                tot[k]++
+                if (mx >= 190 && mx - mn <= 45) cnt[k]++
+            }
+        }
+        val cells = BooleanArray(GRID * GRID) { k -> tot[k] > 0 && cnt[k] * 2 > tot[k] }
+        return if (cells.count { it } < MIN_GLYPH) null else cells
+    }
+
+    /** 마스크를 18타입 템플릿과 IoU 비교 -> (최적 타입, 점수) */
+    private fun matchBox(cells: BooleanArray?): Pair<String?, Double> {
+        if (cells == null) return null to 0.0
+        var bestT: String? = null; var bestS = 0.0
+        for ((t, m) in templates) {
+            var inter = 0; var uni = 0
+            for (k in 0 until GRID * GRID) {
+                if (cells[k] && m[k]) inter++
+                if (cells[k] || m[k]) uni++
+            }
+            val s = if (uni > 0) inter.toDouble() / uni else 0.0
+            if (s > bestS) { bestS = s; bestT = t }
+        }
+        return bestT to bestS
+    }
+
     /** 스크린샷 -> 상대 슬롯별 (타입조합, 후보 목록) */
     fun recognize(shot: Bitmap): List<SlotResult> {
         // 세로 화면이면 팀 프리뷰가 아님
@@ -112,6 +181,25 @@ object Recognizer {
         val minPix = (MINPIX_RATIO * shot.width * shot.height).toInt().coerceAtLeast(6)
         return slots.map { (y0, y1) ->
             val bh = y1 - y0
+            // 1순위: 심볼 모양 매칭 (조명/색 변화에 강함)
+            if (templates.isNotEmpty()) {
+                val gy0 = y0 + (bh * GY0).toInt(); val gy1 = y0 + (bh * GY1).toInt()
+                val lCells = glyphGrid(shot, (shot.width * LX0).toInt(), gy0, (shot.width * LX1).toInt(), gy1)
+                val rCells = glyphGrid(shot, (shot.width * RX0).toInt(), gy0, (shot.width * RX1).toInt(), gy1)
+                val (lt, ls) = matchBox(lCells)
+                val (rt, rs) = matchBox(rCells)
+                AppLog.log("  칸(y$y0) 글리프: L=${lt ?: "-"}(${"%.2f".format(ls)}) R=${rt ?: "-"}(${"%.2f".format(rs)})")
+                val lOk = lCells == null || ls >= GLYPH_THR   // 박스가 비었거나, 매칭 성공
+                val rOk = rCells == null || rs >= GLYPH_THR
+                val gTypes = buildList {
+                    if (lCells != null && ls >= GLYPH_THR) add(lt!!)
+                    if (rCells != null && rs >= GLYPH_THR) add(rt!!)
+                }.distinct()
+                if (lOk && rOk && gTypes.isNotEmpty()) {
+                    return@map SlotResult(gTypes, Dex.candidates(gTypes.toSet()), 3000, false, glyph = true)
+                }
+            }
+            // 폴백: 색 분류 (심볼이 가려졌거나 템플릿 매칭 실패 시)
             val iy0 = y0 + (bh * ICON_Y0).toInt()
             val iy1 = y0 + (bh * ICON_Y1).toInt()
             val ix0 = (shot.width * ICON_X0).toInt()
@@ -156,6 +244,8 @@ object Recognizer {
         if (a.size != b.size) return if (b.size > a.size) b else a
         return a.zip(b).map { (x, y) ->
             when {
+                // 심볼 매칭으로 읽은 쪽이 색 분류 폴백보다 항상 우선
+                x.glyph != y.glyph -> if (x.glyph) x else y
                 x.types.size != y.types.size -> if (x.types.size > y.types.size) x else y
                 x.candidates.isEmpty() && y.candidates.isNotEmpty() -> y
                 y.candidates.isEmpty() && x.candidates.isNotEmpty() -> x
