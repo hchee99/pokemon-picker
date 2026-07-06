@@ -46,7 +46,8 @@ object Recognizer {
         intArrayOf(165, 150, 66), intArrayOf(159, 145, 68), intArrayOf(150, 129, 57),
         intArrayOf(200, 182, 83), intArrayOf(236, 215, 120),
         intArrayOf(255, 255, 255), intArrayOf(235, 235, 235), intArrayOf(150, 150, 150),
-        intArrayOf(90, 88, 92), intArrayOf(60, 55, 58)
+        intArrayOf(90, 88, 92), intArrayOf(60, 55, 58),
+        intArrayOf(56, 106, 230)   // 파란 코트 바닥 (아이콘 띠 가장자리로 비침 — 물로 오인 방지)
     )
 
     // 연한 아이콘(얼음)은 화면 모드/밝기에 따라 기준색보다 밝게 캡처될 수 있어 보조색 추가.
@@ -58,6 +59,9 @@ object Recognizer {
         "얼음" to intArrayOf(170, 228, 250),
         "전기" to intArrayOf(234, 200, 88),
         "전기" to intArrayOf(238, 208, 102),
+        "전기" to intArrayOf(250, 192, 0),    // 실측: 밝은 경기장 전기 아이콘 (쨍한 노랑)
+        "전기" to intArrayOf(243, 191, 40),
+        "물" to intArrayOf(40, 128, 240),     // 실측: 물 아이콘 (코트 파랑과 구분용)
         "격투" to intArrayOf(235, 136, 52),
         "격투" to intArrayOf(240, 118, 42),
         "격투" to intArrayOf(248, 100, 28)
