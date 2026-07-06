@@ -30,13 +30,19 @@ TYPE_RGB = {
 }
 NAMES = list(TYPE_RGB.keys())
 COLS = np.array([TYPE_RGB[t] for t in NAMES], np.float32)  # RGB
+# 연한 아이콘(얼음)은 폰 화면 모드에 따라 밝게 캡처될 수 있어 보조색 추가
+VARIANTS = [("얼음", (150,220,248)), ("얼음", (170,228,250))]
 # 타입이 아닌 색(패널 크림슨/보라/흰 심볼/♂성별 파랑/회색벽 등) -> 무시
 REJECT_RGB = [(99,23,47),(110,36,44),(101,36,58),(98,34,76),(98,27,73),(120,40,66),(70,18,38),
               (32,60,205),(72,101,198),(45,70,200),(66,97,200),   # ♂ 성별 파랑
               (165,150,66),(159,145,68),(150,129,57),(200,182,83),(236,215,120),  # 노란 벽/기둥
               (255,255,255),(235,235,235),(150,150,150),(90,88,92),(60,55,58)]
-ALLCOLS = np.vstack([COLS, np.array(REJECT_RGB, np.float32)])
+ALLCOLS = np.vstack([COLS, np.array([v for _, v in VARIANTS], np.float32),
+                     np.array(REJECT_RGB, np.float32)])
 NT = len(NAMES)
+# ALLCOLS[i] 가 귀속되는 타입 인덱스 (-1 = 제외색)
+COL_TYPE = np.array(list(range(NT)) + [NAMES.index(n) for n, _ in VARIANTS]
+                    + [-1] * len(REJECT_RGB))
 
 # 타입 아이콘 영역(패널 대비 비율)
 TCOL_X0, TCOL_X1 = 0.833, 0.890
@@ -69,9 +75,10 @@ def classify(region_bgr):
     # 각 픽셀 -> 타입색+제외색 중 가장 가까운 것
     d = np.sqrt(((rgb[:, None, :] - ALLCOLS[None, :, :]) ** 2).sum(2))
     nearest = d.argmin(1); mind = d.min(1)
+    ntype = COL_TYPE[nearest]   # 보조색은 원 타입으로 귀속, 제외색은 -1
     counts = np.zeros(NT, int)
     for i in range(NT):
-        counts[i] = int(((nearest == i) & (mind < DIST)).sum())  # 제외색으로 간 픽셀은 제외됨
+        counts[i] = int(((ntype == i) & (mind < DIST)).sum())
     order = counts.argsort()[::-1]
     return [(NAMES[i], int(counts[i])) for i in order if counts[i] >= MINPIX][:3]
 

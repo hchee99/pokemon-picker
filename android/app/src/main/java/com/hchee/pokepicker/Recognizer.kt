@@ -44,8 +44,23 @@ object Recognizer {
         intArrayOf(90, 88, 92), intArrayOf(60, 55, 58)
     )
 
+    // 연한 아이콘(얼음)은 화면 모드/밝기에 따라 기준색보다 밝게 캡처될 수 있어 보조색 추가
+    private val TYPE_VARIANTS = listOf(
+        "얼음" to intArrayOf(150, 220, 248),
+        "얼음" to intArrayOf(170, 228, 250)
+    )
+
     private val NAMES = TYPE_RGB.keys.toList()
-    private val ALLCOLS: Array<IntArray> = (TYPE_RGB.values + REJECT_RGB).toTypedArray()
+    private val ALLCOLS: Array<IntArray> =
+        (TYPE_RGB.values + TYPE_VARIANTS.map { it.second } + REJECT_RGB).toTypedArray()
+    // ALLCOLS[i] 픽셀이 귀속되는 타입 인덱스 (-1 = 제외색)
+    private val COL_TYPE = IntArray(ALLCOLS.size) { i ->
+        when {
+            i < NAMES.size -> i
+            i < NAMES.size + TYPE_VARIANTS.size -> NAMES.indexOf(TYPE_VARIANTS[i - NAMES.size].first)
+            else -> -1
+        }
+    }
     private const val NT = 18
     private const val DIST2 = 55 * 55       // 거리 제곱 비교(sqrt 생략)
     private const val MINPIX_RATIO = 12.0 / (3120.0 * 1440.0)  // 해상도 비례 최소 픽셀
@@ -87,6 +102,10 @@ object Recognizer {
             val counts = classify(shot, ix0, iy0, ix1, iy1)
             val sorted = counts.withIndex().sortedByDescending { it.value }
             val top = sorted.firstOrNull()?.value ?: 0
+            AppLog.log("  칸(y$y0): " + sorted.take(3)
+                .filter { it.value > 0 }
+                .joinToString(",") { "${NAMES[it.index]}=${it.value}" }
+                .ifEmpty { "(타입색 없음)" })
             val chosen = sorted
                 .filter { it.value >= maxOf(minPix, (0.35 * top).toInt()) }
                 .take(2)
@@ -136,6 +155,8 @@ object Recognizer {
         val counts = IntArray(NT)
         val w = (x1 - x0).coerceAtLeast(1)
         val px = IntArray(w)
+        val ice = TYPE_RGB["얼음"]!!
+        var iceNear = 0; var iceR = 0L; var iceG = 0L; var iceB = 0L  // 얼음 진단용
         for (y in y0 until y1.coerceAtMost(shot.height)) {
             shot.getPixels(px, 0, w, x0, y, w, 1)
             for (c in px) {
@@ -147,8 +168,17 @@ object Recognizer {
                     val d = dr * dr + dg * dg + db * db
                     if (d < bestD) { bestD = d; bestIdx = i }
                 }
-                if (bestIdx in 0 until NT && bestD < DIST2) counts[bestIdx]++
+                val ti = if (bestIdx >= 0) COL_TYPE[bestIdx] else -1
+                if (ti >= 0 && bestD < DIST2) counts[ti]++
+                val dr = r - ice[0]; val dg = g - ice[1]; val db = b - ice[2]
+                if (dr * dr + dg * dg + db * db < 90 * 90) {
+                    iceNear++; iceR += r; iceG += g; iceB += b
+                }
             }
+        }
+        // 얼음 계열 픽셀이 꽤 있으면 실제 평균색을 로그로 남김 (재보정용)
+        if (iceNear > 60) {
+            AppLog.log("  얼음근처 ${iceNear}px 평균RGB=(${iceR / iceNear},${iceG / iceNear},${iceB / iceNear}) 얼음판정=${counts[NAMES.indexOf("얼음")]}px")
         }
         return counts
     }
