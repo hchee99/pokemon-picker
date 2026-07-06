@@ -55,11 +55,28 @@ object Recognizer {
     private const val ICON_X0 = 0.833; private const val ICON_X1 = 0.890
     private const val ICON_Y0 = 0.06; private const val ICON_Y1 = 0.40
 
+    // 6개 패널 세로 배치 (3120x1440 캘리브레이션). 애니메이션으로 검출이 흔들려도 이 위치로 고정.
+    private const val PANEL_H = 0.106                 // 화면높이 대비 칸 높이
+    private val FIXED_TOPS = doubleArrayOf(0.142, 0.259, 0.376, 0.493, 0.610, 0.727)
+
     /** 스크린샷 -> 상대 슬롯별 (타입조합, 후보 목록) */
     fun recognize(shot: Bitmap): List<SlotResult> {
-        val panels = findPanels(shot)
+        // 세로 화면이면 팀 프리뷰가 아님
+        if (shot.width < shot.height) {
+            AppLog.log("recognize: 세로(${shot.width}x${shot.height}) — 프리뷰 아님")
+            return emptyList()
+        }
+        val h = shot.height
+        val bands = findPanels(shot)
+        // 애니메이션으로 아래 패널이 덜 그려져도 항상 6칸이 나오게 보정:
+        //  6개 다 잡히면 그대로, 일부만 잡히면 첫 칸 기준 고정간격, 0개면 절대좌표.
+        val ph = (h * PANEL_H).toInt()
+        val slots: List<Pair<Int, Int>> =
+            if (bands.size == 6) bands
+            else FIXED_TOPS.map { val t = (h * it).toInt(); t to (t + ph) }
+        AppLog.log("패널 검출 ${bands.size}개 → 슬롯 ${slots.size}칸 사용")
         val minPix = (MINPIX_RATIO * shot.width * shot.height).toInt().coerceAtLeast(6)
-        return panels.map { (y0, y1) ->
+        return slots.map { (y0, y1) ->
             val bh = y1 - y0
             val iy0 = y0 + (bh * ICON_Y0).toInt()
             val iy1 = y0 + (bh * ICON_Y1).toInt()
