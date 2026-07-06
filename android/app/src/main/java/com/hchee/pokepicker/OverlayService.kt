@@ -60,6 +60,7 @@ class OverlayService : Service() {
     private var reader: ImageReader? = null
     private var vdisp: android.hardware.display.VirtualDisplay? = null
     @Volatile private var wantFrame = false
+    private var firstResults: List<Recognizer.SlotResult>? = null  // 2프레임 병합용 1차 결과
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -174,6 +175,7 @@ class OverlayService : Service() {
         bubble?.text = "⏳"
         main.postDelayed({ bubble?.text = "⚡" }, 1500)
         AppLog.log("captureNow: 다음 프레임 요청")
+        firstResults = null
         wantFrame = true
         main.postDelayed({
             if (wantFrame) { wantFrame = false; AppLog.log("프레임 타임아웃"); Toast.makeText(this, "캡처 실패 — 한 번 더 탭해 주세요", Toast.LENGTH_SHORT).show() }
@@ -190,15 +192,36 @@ class OverlayService : Service() {
             it.types.joinToString("/") + "→" + it.candidates.take(3).joinToString(",")
         })
         main.post {
-            if (results.size < 3) {
-                Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
+            val first = firstResults
+            if (first == null) {
+                if (results.size < 3) {
+                    Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+                // 1차 성공 → 0.5초 뒤 한 프레임 더 찍어 레이저/애니메이션 가림 보완
+                firstResults = results
+                main.postDelayed({ if (firstResults != null) wantFrame = true }, 500)
+                main.postDelayed({
+                    firstResults?.let { f ->   // 2차가 안 오면 1차 결과로 진행
+                        firstResults = null; wantFrame = false
+                        AppLog.log("2차 프레임 없음 → 1차 결과 사용")
+                        finishResults(f)
+                    }
+                }, 2000)
             } else {
-                lastResults = results
-                selected.clear()
-                results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
-                showPanel()
+                firstResults = null
+                val merged = Recognizer.merge(first, results)
+                AppLog.log("2프레임 병합: " + merged.joinToString(" | ") { it.types.joinToString("/") })
+                finishResults(merged)
             }
         }
+    }
+
+    private fun finishResults(results: List<Recognizer.SlotResult>) {
+        lastResults = results
+        selected.clear()
+        results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
+        showPanel()
     }
 
     // ---------- 포그라운드 알림 ----------

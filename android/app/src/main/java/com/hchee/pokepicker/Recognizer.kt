@@ -114,6 +114,23 @@ object Recognizer {
         }
     }
 
+    /**
+     * 두 프레임의 인식 결과 병합.
+     * 배경 레이저/애니메이션이 순간적으로 아이콘을 가리면 타입이 빠질 수 있어서
+     * (예: 풀/얼음 → 풀만) 슬롯마다 더 많이 읽힌 쪽을 채택한다.
+     */
+    fun merge(a: List<SlotResult>, b: List<SlotResult>): List<SlotResult> {
+        if (a.size != b.size) return if (b.size > a.size) b else a
+        return a.zip(b).map { (x, y) ->
+            when {
+                x.types.size != y.types.size -> if (x.types.size > y.types.size) x else y
+                x.candidates.isEmpty() && y.candidates.isNotEmpty() -> y
+                y.candidates.isEmpty() && x.candidates.isNotEmpty() -> x
+                else -> y   // 동급이면 나중 프레임(애니메이션이 더 진정된 쪽)
+            }
+        }
+    }
+
     /** 오른쪽 띠의 마젠타 가로줄 프로파일로 패널 세로 구간 검출 */
     private fun findPanels(shot: Bitmap): List<Pair<Int, Int>> {
         val w = shot.width; val h = shot.height
