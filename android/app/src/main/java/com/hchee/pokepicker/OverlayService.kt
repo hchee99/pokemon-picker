@@ -429,9 +429,9 @@ class OverlayService : Service() {
             text = "닫기"
             setOnClickListener { hideWeb() }
         })
-        // 오른쪽에 표시: 추천을 보면서 왼쪽 내 팀 목록에서 3마리를 탭할 수 있게
+        // 왼쪽에 표시: 오른쪽 상대 팀 정보를 가리지 않게 (상대 인식창과 같은 쪽)
         val lp = overlayParams((disp.widthPixels * 0.55).toInt(), WindowManager.LayoutParams.WRAP_CONTENT)
-        lp.gravity = Gravity.CENTER_VERTICAL or Gravity.END
+        lp.gravity = Gravity.CENTER_VERTICAL or Gravity.START
         lp.x = dp(8)
         wm.addView(root, lp)
         webPanel = root
