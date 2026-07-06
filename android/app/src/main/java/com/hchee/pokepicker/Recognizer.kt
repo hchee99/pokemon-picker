@@ -74,7 +74,9 @@ object Recognizer {
         val slots: List<Pair<Int, Int>> =
             if (bands.size == 6) bands
             else FIXED_TOPS.map { val t = (h * it).toInt(); t to (t + ph) }
-        AppLog.log("패널 검출 ${bands.size}개 → 슬롯 ${slots.size}칸 사용")
+        AppLog.log("패널 검출 ${bands.size}개 → 슬롯 ${slots.size}칸 사용" +
+            (if (bands.size == 6) " (검출)" else " (고정그리드)") +
+            " | y=" + slots.joinToString(",") { "${it.first}-${it.second}" })
         val minPix = (MINPIX_RATIO * shot.width * shot.height).toInt().coerceAtLeast(6)
         return slots.map { (y0, y1) ->
             val bh = y1 - y0
