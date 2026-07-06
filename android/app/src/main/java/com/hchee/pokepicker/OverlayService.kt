@@ -189,12 +189,13 @@ class OverlayService : Service() {
             AppLog.log("인식 실패", e); emptyList()
         }
         AppLog.log("인식 결과 ${results.size}칸: " + results.joinToString(" | ") {
-            it.types.joinToString("/") + "→" + it.candidates.take(3).joinToString(",")
+            it.types.joinToString("/") + (if (it.uncertain) "?" else "") + "→" + it.candidates.take(3).joinToString(",")
         })
         main.post {
             val first = firstResults
             if (first == null) {
-                if (results.size < 3) {
+                // 팀 프리뷰가 아니면(타입을 못 읽은 칸이 대부분) 빈 패널을 띄우지 않음
+                if (results.count { it.types.isNotEmpty() } < 3) {
                     Toast.makeText(this, "상대 패널을 못 찾았어요 (팀 프리뷰 화면인지 확인)", Toast.LENGTH_SHORT).show()
                     return@post
                 }
@@ -349,8 +350,9 @@ class OverlayService : Service() {
         lastResults.forEachIndexed { i, r ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(4), 0, dp(4)) }
             row.addView(TextView(this).apply {
-                text = "${i + 1}. ${if (r.types.isEmpty()) "(인식 실패)" else r.types.joinToString("/")}"
-                setTextColor(0xFFAAB2FF.toInt()); textSize = 12f
+                text = "${i + 1}. ${if (r.types.isEmpty()) "(인식 실패)" else r.types.joinToString("/")}" +
+                    (if (r.uncertain) "  ⚠ 가림 의심 — 후보 넓게 표시" else "")
+                setTextColor(if (r.uncertain) 0xFFFFC46B.toInt() else 0xFFAAB2FF.toInt()); textSize = 12f
             })
             val chipsWrap = HorizontalScrollView(this)
             val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
