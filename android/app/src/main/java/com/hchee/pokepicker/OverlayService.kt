@@ -379,28 +379,44 @@ class OverlayService : Service() {
                     setOnClickListener { selected[i] = name; selectedMega.remove(i); showPanel() }
                 })
             }
-            // 고른 포켓몬에 메가폼이 있으면 별도 칩으로 제시 (타입이 바뀌는 메가 대응)
-            // 탭하면 계산이 메가 타입/스피드 기준으로, 다시 탭하면 해제
-            Dex.megasOf(selected[i] ?: "").forEach { mega ->
-                chips.addView(TextView(this).apply {
-                    text = "M ${mega.name} (${mega.types.joinToString("/")})"
-                    textSize = 12f
-                    setPadding(dp(10), dp(5), dp(10), dp(5))
-                    val sel = selectedMega[i] == mega.name
-                    background = pill(if (sel) 0xFF8A4FD0.toInt() else 0xFF43355C.toInt())
-                    setTextColor(Color.WHITE)
-                    val p = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ); p.rightMargin = dp(6); layoutParams = p
-                    setOnClickListener {
-                        if (selectedMega[i] == mega.name) selectedMega.remove(i)
-                        else selectedMega[i] = mega.name
-                        showPanel()
-                    }
-                })
-            }
             chipsWrap.addView(chips)
             row.addView(chipsWrap)
+            // 고른 포켓몬에 메가폼이 있으면 바로 아래 줄에 선택지 표시 (타입이 바뀌는 메가 대응)
+            // 탭하면 계산이 메가 타입/스피드 기준으로, 다시 탭하면 기본폼으로
+            val megas = Dex.megasOf(selected[i] ?: "")
+            if (megas.isNotEmpty()) {
+                val megaRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(5), 0, 0)
+                }
+                megaRow.addView(TextView(this).apply {
+                    text = "↳ 메가진화?"
+                    textSize = 11f; setTextColor(0xFFB49BE0.toInt())
+                    setPadding(dp(2), 0, dp(8), 0)
+                })
+                megas.forEach { mega ->
+                    megaRow.addView(TextView(this).apply {
+                        text = "${mega.name} (${mega.types.joinToString("/")})"
+                        textSize = 12f
+                        setPadding(dp(10), dp(5), dp(10), dp(5))
+                        val sel = selectedMega[i] == mega.name
+                        background = pill(if (sel) 0xFF8A4FD0.toInt() else 0xFF43355C.toInt())
+                        setTextColor(Color.WHITE)
+                        val p = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                        ); p.rightMargin = dp(6); layoutParams = p
+                        setOnClickListener {
+                            if (selectedMega[i] == mega.name) selectedMega.remove(i)
+                            else selectedMega[i] = mega.name
+                            showPanel()
+                        }
+                    })
+                }
+                val megaWrap = HorizontalScrollView(this)
+                megaWrap.addView(megaRow)
+                row.addView(megaWrap)
+            }
             list.addView(row)
         }
         val scroll = ScrollView(this)
