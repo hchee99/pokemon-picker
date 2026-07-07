@@ -57,4 +57,12 @@ object Dex {
     /** 타입 조합이 정확히 일치하는 후보들 */
     fun candidates(types: Set<String>): List<String> =
         mons.filter { it.types == types }.map { it.name }
+
+    /** 메가폼 이름인지 (포켓몬 '메가니움'은 예외) */
+    fun isMega(name: String) = name.startsWith("메가") && !name.startsWith("메가니움")
+
+    /** 이 포켓몬의 메가진화 폼들 (도감에 있는 것만, 예: 리자몽 → 메가리자몽X/Y) */
+    fun megasOf(base: String): List<Mon> =
+        if (base.isEmpty() || isMega(base)) emptyList()
+        else mons.filter { isMega(it.name) && it.name.startsWith("메가$base") }
 }

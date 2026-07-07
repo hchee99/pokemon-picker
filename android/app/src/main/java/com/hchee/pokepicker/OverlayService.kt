@@ -55,6 +55,8 @@ class OverlayService : Service() {
     private var lastId = -1L
     private var lastResults: List<Recognizer.SlotResult> = emptyList()
     private val selected = HashMap<Int, String>()
+    // 슬롯별 메가진화 선택 (예: 갸라도스 → "메가갸라도스"). 계산 시 이 이름으로 대체.
+    private val selectedMega = HashMap<Int, String>()
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
     private var reader: ImageReader? = null
@@ -223,6 +225,7 @@ class OverlayService : Service() {
     private fun finishResults(results: List<Recognizer.SlotResult>) {
         lastResults = results
         selected.clear()
+        selectedMega.clear()
         results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
         showPanel()
     }
@@ -373,7 +376,27 @@ class OverlayService : Service() {
                     val p = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
                     ); p.rightMargin = dp(6); layoutParams = p
-                    setOnClickListener { selected[i] = name; showPanel() }
+                    setOnClickListener { selected[i] = name; selectedMega.remove(i); showPanel() }
+                })
+            }
+            // 고른 포켓몬에 메가폼이 있으면 별도 칩으로 제시 (타입이 바뀌는 메가 대응)
+            // 탭하면 계산이 메가 타입/스피드 기준으로, 다시 탭하면 해제
+            Dex.megasOf(selected[i] ?: "").forEach { mega ->
+                chips.addView(TextView(this).apply {
+                    text = "M ${mega.name} (${mega.types.joinToString("/")})"
+                    textSize = 12f
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    val sel = selectedMega[i] == mega.name
+                    background = pill(if (sel) 0xFF8A4FD0.toInt() else 0xFF43355C.toInt())
+                    setTextColor(Color.WHITE)
+                    val p = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ); p.rightMargin = dp(6); layoutParams = p
+                    setOnClickListener {
+                        if (selectedMega[i] == mega.name) selectedMega.remove(i)
+                        else selectedMega[i] = mega.name
+                        showPanel()
+                    }
                 })
             }
             chipsWrap.addView(chips)
@@ -429,7 +452,8 @@ class OverlayService : Service() {
             webViewClient = object : android.webkit.WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     val foes = JSONArray()
-                    for (i in 0 until 6) foes.put(selected[i] ?: "")
+                    // 메가진화를 선택한 칸은 메가 이름으로 계산 (타입/스피드가 메가 기준)
+                    for (i in 0 until 6) foes.put(selectedMega[i] ?: selected[i] ?: "")
                     val js = """
                         (function(){
                           try {

@@ -196,7 +196,9 @@ object Recognizer {
                     if (rCells != null && rs >= GLYPH_THR) add(rt!!)
                 }.distinct()
                 if (lOk && rOk && gTypes.isNotEmpty()) {
-                    return@map SlotResult(gTypes, Dex.candidates(gTypes.toSet()), 3000, false, glyph = true)
+                    // 팀 프리뷰엔 항상 기본폼만 보이므로 후보에서 메가폼은 제외 (메가는 UI에서 별도 선택)
+                    val cands = Dex.candidates(gTypes.toSet()).filterNot { Dex.isMega(it) }
+                    return@map SlotResult(gTypes, cands, 3000, false, glyph = true)
                 }
             }
             // 폴백: 색 분류 (심볼이 가려졌거나 템플릿 매칭 실패 시)
@@ -219,7 +221,7 @@ object Recognizer {
             // 라이츄 꼬리처럼 스프라이트가 아이콘을 덮은 것 → 상위 2개 타입의 조합 후보를 모두 제시
             val lowConf = (700.0 * shot.width * shot.height / (3120.0 * 1440.0)).toInt()
             val uncertain = chosen.isNotEmpty() && top < lowConf
-            val cands = if (chosen.isEmpty()) emptyList()
+            val cands = (if (chosen.isEmpty()) emptyList()
             else if (!uncertain) Dex.candidates(chosen.toSet())
             else {
                 val t1 = NAMES[sorted[0].index]
@@ -229,8 +231,8 @@ object Recognizer {
                     if (t2 != null) { add(setOf(t1, t2)); add(setOf(t2)) }
                     add(setOf(t1))
                 }.distinct()
-                combos.flatMap { Dex.candidates(it) }.distinct().take(12)
-            }
+                combos.flatMap { Dex.candidates(it) }.distinct().take(16)
+            }).filterNot { Dex.isMega(it) }   // 프리뷰엔 기본폼만 — 메가는 UI에서 별도 선택
             SlotResult(chosen, cands, top, uncertain)
         }
     }
