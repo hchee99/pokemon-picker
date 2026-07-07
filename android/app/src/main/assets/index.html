@@ -431,6 +431,10 @@ teamSlots(document.getElementById("foe"),foePreset,FOEBUILDS);
 document.getElementById("mine").addEventListener("change",e=>{ if(e.target.classList&&e.target.classList.contains("tn")) saveMyTeam(); });
 document.getElementById("mine").addEventListener("input",e=>{ if(e.target.classList&&e.target.classList.contains("tn")) saveMyTeam(); });
 run();
+// 첫 방문(도감이 기본 예시뿐)이면 같은 폴더의 pokedex.json을 자동 로드 (호스팅용, 실패 시 조용히 무시)
+if(Object.keys(DEX).length<=SEED.length){
+  fetch("pokedex.json").then(r=>r.ok?r.text():null).then(t=>{ if(t){ doImport(t); run(); } }).catch(()=>{});
+}
 </script>
 </body>
 </html>
