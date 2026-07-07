@@ -2,6 +2,9 @@
 
 6마리 지참 → 3마리 선발(팀 프리뷰) 방식의 싱글 배틀에서, 내 팀과 상대 팀을 넣으면 타입 커버리지·선공·약점 노출을 계산해 **최적의 3마리 조합**을 추천하는 도구.
 
+> **🌐 웹에서 바로 사용:** https://hchee99.github.io/pokemon-picker/
+> **📱 안드로이드 앱(APK) 다운로드:** [Releases 페이지](https://github.com/hchee99/pokemon-picker/releases/latest) — 다운로드 후 설치 시 "출처를 알 수 없는 앱 허용"이 필요합니다
+
 두 가지 형태로 쓸 수 있습니다:
 
 | 구성 | 설명 |
