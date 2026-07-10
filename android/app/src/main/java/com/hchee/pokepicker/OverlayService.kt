@@ -57,6 +57,8 @@ class OverlayService : Service() {
     private val selected = HashMap<Int, String>()
     // 슬롯별 메가진화 선택 (예: 갸라도스 → "메가갸라도스"). 계산 시 이 이름으로 대체.
     private val selectedMega = HashMap<Int, String>()
+    // 패널을 다시 그릴 때(후보 탭 등) 스크롤 위치를 유지하기 위한 참조
+    private var panelScroll: ScrollView? = null
     private val main = Handler(Looper.getMainLooper())
     private var projection: MediaProjection? = null
     private var reader: ImageReader? = null
@@ -226,6 +228,7 @@ class OverlayService : Service() {
         lastResults = results
         selected.clear()
         selectedMega.clear()
+        panelScroll = null   // 새 인식 결과는 맨 위부터
         results.forEachIndexed { i, r -> r.candidates.firstOrNull()?.let { selected[i] = it } }
         showPanel()
     }
@@ -340,6 +343,8 @@ class OverlayService : Service() {
 
     // ---------- 인식 결과 패널 ----------
     private fun showPanel() {
+        // 후보 탭 등으로 다시 그릴 때 보던 스크롤 위치 유지 (맨 위로 튀는 것 방지)
+        val keepY = if (panel != null) panelScroll?.scrollY ?: 0 else 0
         hidePanel(); hideWeb()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -447,6 +452,8 @@ class OverlayService : Service() {
         lp.x = dp(8); lp.y = dp(40)
         wm.addView(root, lp)
         panel = root
+        panelScroll = scroll
+        if (keepY > 0) scroll.post { scroll.scrollTo(0, keepY) }
     }
 
     private fun hidePanel() { panel?.let { runCatching { wm.removeView(it) } }; panel = null }
